@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><title>Select Your Seats - AMC</title></head>
+<body>
+  <main class="seatMapContainer">
+    <!-- Rows are returned top-to-bottom: A is closest to the screen. -->
+    <div class="seatMapRow" data-row-name="A">
+      <div class="seat" data-seat-number="1" data-seat-status="sold"></div>
+      <div class="seat" data-seat-number="2" data-seat-status="sold"></div>
+      <div class="seat seat--space"></div>
+      <div class="seat" data-seat-number="3" data-seat-status="available"></div>
+      <div class="seat" data-seat-number="4" data-seat-status="sold"></div>
+    </div>
+    <div class="seatMapRow" data-row-name="B">
+      <div class="seat" data-seat-number="1" data-seat-status="available"></div>
+      <div class="seat" data-seat-number="2" data-seat-status="sold"></div>
+      <div class="seat" data-seat-number="3" data-seat-status="available"></div>
+      <div class="seat" data-seat-number="4" data-seat-status="available"></div>
+    </div>
+    <!-- H is the 8th label but I is skipped, so physical position differs from a naive letter index.
+         DOM order (index 7 -> physical row 8) is what actually matters. -->
+    <div class="seatMapRow" data-row-name="C">
+      <div class="seat" data-seat-status="sold"></div>
+      <div class="seat" data-seat-status="sold"></div>
+    </div>
+    <div class="seatMapRow" data-row-name="D">
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="sold"></div>
+    </div>
+    <div class="seatMapRow" data-row-name="E">
+      <div class="seat" data-seat-status="sold"></div>
+      <div class="seat" data-seat-status="available"></div>
+    </div>
+    <div class="seatMapRow" data-row-name="F">
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="sold"></div>
+    </div>
+    <div class="seatMapRow" data-row-name="G">
+      <div class="seat" data-seat-status="sold"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+    </div>
+    <!-- Row H = DOM index 7 = physical row 8. A clean block of 5 available seats. -->
+    <div class="seatMapRow" data-row-name="H">
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="available"></div>
+      <div class="seat" data-seat-status="companion"></div>
+    </div>
+  </main>
+</body></html>
