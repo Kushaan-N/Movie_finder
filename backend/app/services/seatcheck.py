@@ -24,25 +24,19 @@ def _longest_available_run(seats: list[bool]) -> int:
     return best
 
 
-def check_seats(
-    st: ProviderShowtime,
+def evaluate_rows(
+    seat_rows: list[SeatMapRow],
     chain: str,
     theater_id: str,
     seats_together: int,
     min_row: int,
 ) -> SeatCheck:
-    if not st.seat_rows:
-        return SeatCheck(
-            status="check_manually",
-            seats_together_requested=seats_together,
-            min_row_requested=min_row,
-            reason=st.seat_unavailable_reason or "No parseable seat map available",
-        )
-
+    """Core seat logic over a parsed (non-empty) seat map. Shared by the initial
+    provider check and the Playwright seat-verification enrichment."""
     best_block_size = 0
     best_row_interp: Optional[RowInterpretation] = None
 
-    for idx, row in enumerate(st.seat_rows):
+    for idx, row in enumerate(seat_rows):
         interp = normalize_row(
             chain=chain,
             raw_label=row.raw_label,
@@ -75,3 +69,20 @@ def check_seats(
         best_block_row=best_row_interp,
         reason=None if status == "match" else "No qualifying contiguous block found",
     )
+
+
+def check_seats(
+    st: ProviderShowtime,
+    chain: str,
+    theater_id: str,
+    seats_together: int,
+    min_row: int,
+) -> SeatCheck:
+    if not st.seat_rows:
+        return SeatCheck(
+            status="check_manually",
+            seats_together_requested=seats_together,
+            min_row_requested=min_row,
+            reason=st.seat_unavailable_reason or "No parseable seat map available",
+        )
+    return evaluate_rows(st.seat_rows, chain, theater_id, seats_together, min_row)
