@@ -28,6 +28,10 @@ auth later is additive, not a rewrite.
   that are new since the last run.
 - Seat-check status badges: 🟢 match / 🟡 check manually / 🔴 no block — and it
   **never fabricates** a match when a seat map can't be parsed.
+- **Playwright seat verification** (AMC/Regal/Cinemark): renders the booking page,
+  parses the seat map via config-driven selectors, and upgrades "check manually"
+  into a real match/no-match — with an offline debug harness to tune selectors
+  against real pages. Rate-limited, robots-aware, canvas/login-wall safe.
 - **Radius filtering on live data**: SerpApi's per-theater distance is parsed and
   applied to the radius, not just theaters matched to `theaters.json`.
 - **Short-TTL search cache** (default 5 min, `SEARCH_CACHE_TTL_SEC`) to conserve the
@@ -96,9 +100,9 @@ npm run dev                                # http://localhost:5173
 The dev server proxies `/api/*` to `http://localhost:8000` (override with
 `VITE_API_TARGET`). No CORS setup needed for local dev.
 
-### 3. Playwright (for the scraping fallback — pass 2)
+### 3. Playwright (for seat verification — pass 2)
 
-Only needed if you enable the scraper (`ENABLE_SCRAPER_FALLBACK=true`):
+Only needed if you enable seat verification (`ENABLE_SEAT_VERIFICATION=true`):
 
 ```bash
 cd backend && source .venv/bin/activate
@@ -148,6 +152,42 @@ Each falls back to the next when unavailable or empty. The scraper is rate-limit
 respects `robots.txt`.
 
 ---
+
+## Seat verification (Playwright, pass 2)
+
+SerpApi/MovieGlu give showtimes but no seat maps, so their results are "check
+manually" for seats. **Seat verification** closes that gap: for supported chains
+(AMC, Regal, Cinemark) it renders the booking page with Playwright, parses the
+seat map, and upgrades the badge to a real 🟢 match / 🔴 no-match — honoring
+`seats_together`, `min_row`, and the per-chain physical-row normalization.
+
+- Turn it on: `ENABLE_SEAT_VERIFICATION=true` in `backend/.env` (+ `playwright
+  install chromium`). It's rate-limited, respects `robots.txt`, is capped per
+  search (`SEAT_VERIFICATION_MAX`), and caches per URL. It **never fabricates** a
+  match — if the map is a `<canvas>`, behind a login wall, or the markers can't be
+  read, it stays "check manually" with the reason surfaced.
+- It enriches showtimes we already have booking URLs for (it does **not** re-scrape
+  showtime discovery), which is the reliable, high-value part.
+
+### Parsing is config-driven — tune it against a real page
+
+The CSS selectors that read each chain's seat map live in **`scrape_selectors.json`**
+(hand-editable). Chain markup changes, so verify/tune them offline with the debug
+harness — save a real seat-selection page from your browser, then:
+
+```bash
+cd backend && source .venv/bin/activate
+python -m app.scrape.debug amc /path/to/saved_seatmap.html --seats 4 --min-row 5
+```
+
+It prints each parsed row with its physical-row mapping, an availability strip, and
+a simulated seat check — so you can confirm the selectors (and the row mapping)
+before trusting live results. Example output:
+
+```
+  Row H → physical row 8   avail= 5/6  [█████·]
+Simulated seat check (seats_together=4, min_row=5): status = match
+```
 
 ## Row normalization — how to verify / correct a chain
 
