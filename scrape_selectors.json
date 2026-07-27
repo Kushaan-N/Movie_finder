@@ -1,0 +1,64 @@
+{
+  "_comment": "Per-chain CSS selectors for parsing seat maps out of rendered HTML. These are HAND-EDITABLE and MUST be verified/tuned against a real saved page — chain markup changes over time and differs by theater. Use the debug harness to check them offline:  python -m app.scrape.debug amc /path/to/saved_seatmap.html  (see backend/app/scrape/debug.py). The parser reads row containers top-to-bottom in DOM order (= physical position, closest to screen first), so even if labels are wrong the ordering feeds rows.py correctly.",
+
+  "default_available_is_default": false,
+
+  "chains": {
+    "amc": {
+      "note": "AMC's seat-selection page is a JS-rendered SPA. These selectors are plausible defaults covering a few markup generations; verify against a saved page. If AMC renders seats to <canvas>, the parser returns 'check manually' (never a guess).",
+      "row_selector": ".seatMapRow, [data-row-index], [data-row-name], .SeatMap__row, .seat-row",
+      "seat_selector": ".seat, [data-seat-number], [data-seat-id], .SeatMap__seat",
+      "row_label_attr": "data-row-name",
+      "row_label_selector": ".rowLabel, .SeatMap__rowLabel, .seat-row-label",
+      "seat_row_attr": "data-row-name",
+      "available_attr": "data-seat-status",
+      "available_values": ["available", "open", "unsold", "sellable"],
+      "unavailable_values": ["unavailable", "taken", "sold", "occupied", "held", "broken", "companion"],
+      "available_class_any": ["seat--available", "isAvailable", "is-available", "available", "seatAvailable"],
+      "unavailable_class_any": ["seat--unavailable", "seat--sold", "isTaken", "isSold", "unavailable", "taken", "sold", "occupied", "seatSold"],
+      "ignore_class_any": ["seat--space", "isSpace", "aisle", "spacer", "blank", "seatSpace"],
+      "available_is_default": false,
+      "canvas_selector": "canvas",
+      "login_wall_selector": "[data-signin-required], .signInRequired, .authWall, .sign-in-gate",
+      "login_wall_text": ["sign in to select", "log in to choose your seats", "please sign in to continue", "sign in to reserve"]
+    },
+
+    "regal": {
+      "note": "STUB — mixed markup that varies by theater. Verify with the debug harness before trusting. Falls back to DOM order for physical position.",
+      "row_selector": "[data-row], .seat-row, .row",
+      "seat_selector": "[data-seat], .seat",
+      "row_label_attr": "data-row",
+      "row_label_selector": ".row-label",
+      "seat_row_attr": "data-row",
+      "available_attr": "data-status",
+      "available_values": ["available", "open"],
+      "unavailable_values": ["unavailable", "taken", "sold", "occupied"],
+      "available_class_any": ["available", "seat--available"],
+      "unavailable_class_any": ["unavailable", "taken", "sold", "occupied"],
+      "ignore_class_any": ["aisle", "space", "spacer", "blank"],
+      "available_is_default": false,
+      "canvas_selector": "canvas",
+      "login_wall_selector": ".sign-in-required",
+      "login_wall_text": ["sign in to select seats"]
+    },
+
+    "cinemark": {
+      "note": "STUB — Cinemark/Century/Tinseltown. Verify with the debug harness. Numeric row labels typical; DOM order used as the safe physical position.",
+      "row_selector": "[data-row-number], .seat-row, .row",
+      "seat_selector": "[data-seat-number], .seat",
+      "row_label_attr": "data-row-number",
+      "row_label_selector": ".row-number",
+      "seat_row_attr": "data-row-number",
+      "available_attr": "data-availability",
+      "available_values": ["available", "open"],
+      "unavailable_values": ["unavailable", "taken", "sold", "occupied"],
+      "available_class_any": ["available", "seat-available"],
+      "unavailable_class_any": ["unavailable", "taken", "sold", "occupied", "seat-taken"],
+      "ignore_class_any": ["aisle", "space", "spacer", "blank"],
+      "available_is_default": false,
+      "canvas_selector": "canvas",
+      "login_wall_selector": ".sign-in-required",
+      "login_wall_text": ["sign in to select seats"]
+    }
+  }
+}
