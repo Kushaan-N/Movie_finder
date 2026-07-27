@@ -57,11 +57,19 @@ app.add_middleware(
 # --------------------------------------------------------------------------- #
 @app.get("/api/health")
 def health() -> dict:
+    playwright_installed = False
+    try:
+        import playwright  # noqa: F401
+        playwright_installed = True
+    except ImportError:
+        pass
     return {
         "status": "ok",
         "serpapi": settings.has_serpapi,
         "movieglu": settings.has_movieglu,
         "scraper_fallback": settings.enable_scraper_fallback,
+        "seat_verification": settings.enable_seat_verification and playwright_installed,
+        "playwright_installed": playwright_installed,
     }
 
 
