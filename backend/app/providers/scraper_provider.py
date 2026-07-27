@@ -1,14 +1,12 @@
 """Playwright scraping fallback (priority 3).
 
-This is the pass-2 structure: a polite, rate-limited, robots-aware scraper for
-JS-rendered chain sites (Fandango / AMC / Regal / Cinemark), with a per-chain
-seat-map parser registry that feeds the seat check. It is import-safe even when
-Playwright is not installed (the import is lazy) and is OFF unless
-ENABLE_SCRAPER_FALLBACK=true.
+Polite, rate-limited, robots-aware plumbing (RateLimiter + _robots_allows) shared
+by the seat verifier. Import-safe even when Playwright isn't installed (the import
+is lazy) and OFF unless ENABLE_SCRAPER_FALLBACK=true.
 
-Seat-map parsing is genuinely hard (canvas rendering, login walls, bot walls).
-When a parser can't reliably read the map it returns rows=None with a reason so
-the result becomes "check manually" — we never guess a seat match.
+Seat-map parsing/verification is genuinely hard (canvas rendering, login walls,
+bot walls). It lives in app/scrape/ and always returns "check manually" rather
+than guessing when a map can't be read.
 """
 from __future__ import annotations
 
@@ -16,11 +14,10 @@ import asyncio
 import logging
 import time
 import urllib.robotparser
-from typing import Callable, Optional
 from urllib.parse import urlparse
 
 from ..config import get_settings
-from .base import ProviderQuery, ProviderShowtime, SeatMapRow, ShowtimeProvider
+from .base import ProviderQuery, ProviderShowtime, ShowtimeProvider
 
 logger = logging.getLogger("showtime_finder.scraper")
 
@@ -63,36 +60,10 @@ def _robots_allows(url: str, user_agent: str = "showtime-finder") -> bool:
     return rp.can_fetch(user_agent, url)
 
 
-# --------------------------------------------------------------------------- #
-# Per-chain seat-map parsers.
-#
-# Each takes a rendered Playwright `page` positioned on a seat-selection view
-# and returns a list[SeatMapRow] in DOM order, or None (with the caller marking
-# "check manually"). These are stubs to be filled in against live pages.
-# --------------------------------------------------------------------------- #
-SeatParser = Callable[..., "Optional[list[SeatMapRow]]"]
-
-
-async def _parse_amc_seatmap(page) -> Optional[list[SeatMapRow]]:  # pragma: no cover
-    # AMC renders seats as DOM elements grouped by row. Read rows top-to-bottom
-    # (DOM order) and each seat's availability class. Return None if the map is
-    # behind a login wall or rendered to canvas.
-    return None
-
-
-async def _parse_regal_seatmap(page) -> Optional[list[SeatMapRow]]:  # pragma: no cover
-    return None
-
-
-async def _parse_cinemark_seatmap(page) -> Optional[list[SeatMapRow]]:  # pragma: no cover
-    return None
-
-
-SEAT_PARSERS: dict[str, SeatParser] = {
-    "amc": _parse_amc_seatmap,
-    "regal": _parse_regal_seatmap,
-    "cinemark": _parse_cinemark_seatmap,
-}
+# NOTE: seat-map PARSING now lives in app/scrape/seatmap.py (config-driven, fully
+# unit-tested), and seat VERIFICATION (render a booking page + parse it) lives in
+# app/scrape/verifier.py. Those reuse RateLimiter and _robots_allows above. This
+# provider remains a showtime *discovery* fallback only.
 
 
 class ScraperProvider(ShowtimeProvider):
@@ -112,20 +83,10 @@ class ScraperProvider(ShowtimeProvider):
         return True
 
     async def fetch(self, query: ProviderQuery) -> list[ProviderShowtime]:
-        # Pass-2 implementation outline (kept minimal and safe for v1):
-        #
-        #   async with async_playwright() as p:
-        #       browser = await p.chromium.launch()
-        #       for theater in query.theaters:
-        #           if not _robots_allows(theater.booking_base_url): continue
-        #           await self._limiter.acquire()
-        #           page = await browser.new_page()
-        #           ... navigate to showtimes, collect times + booking links ...
-        #           parser = SEAT_PARSERS.get(theater.chain)
-        #           rows = await parser(page) if parser else None
-        #           ... build ProviderShowtime(seat_rows=rows) ...
-        #
-        # Until the per-chain navigation is filled in, return nothing so the
-        # pipeline falls back to higher-priority providers cleanly.
-        logger.info("Scraper fallback active but per-chain navigation is a v1 stub.")
+        # Showtime *discovery* by scraping chain sites is the fragile part and is
+        # left as a documented stub: it returns nothing so the pipeline falls back
+        # to higher-priority providers cleanly. The high-value seat *verification*
+        # (render a known booking page and parse its seat map) is implemented in
+        # app/scrape/verifier.py and runs as an enrichment step in run_search.
+        logger.info("Scraper discovery is a stub; seat verification lives in scrape/verifier.py.")
         return []
