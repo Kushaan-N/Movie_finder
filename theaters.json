@@ -1,0 +1,55 @@
+{
+  "_comment": "Editable list of candidate theaters. 'chain' selects which seat-map parser and row normalizer to use. 'formats' are the confirmed formats available. Add/remove theaters freely; the backend resolves candidates from here when Google Places is not configured.",
+  "theaters": [
+    {
+      "id": "amc-metreon-16",
+      "name": "AMC Metreon 16",
+      "chain": "amc",
+      "address": "135 4th St #3000, San Francisco, CA 94103",
+      "lat": 37.7841,
+      "lng": -122.4033,
+      "formats": ["IMAX", "Dolby", "Standard"],
+      "booking_base_url": "https://www.amctheatres.com"
+    },
+    {
+      "id": "amc-eastridge-15",
+      "name": "AMC Eastridge 15",
+      "chain": "amc",
+      "address": "2190 Eastridge Loop, San Jose, CA 95122",
+      "lat": 37.3252,
+      "lng": -121.8113,
+      "formats": ["Dolby", "Standard"],
+      "booking_base_url": "https://www.amctheatres.com"
+    },
+    {
+      "id": "regal-hacienda-crossings",
+      "name": "Regal Hacienda Crossings ScreenX & IMAX",
+      "chain": "regal",
+      "address": "5000 Dublin Blvd, Dublin, CA 94568",
+      "lat": 37.7057,
+      "lng": -121.8683,
+      "formats": ["IMAX", "ScreenX", "Standard"],
+      "booking_base_url": "https://www.regmovies.com"
+    },
+    {
+      "id": "cinemark-century-20-oakridge",
+      "name": "Century 20 Oakridge and XD",
+      "chain": "cinemark",
+      "address": "925 Blossom Hill Rd, San Jose, CA 95123",
+      "lat": 37.2519,
+      "lng": -121.8459,
+      "formats": ["XD", "Standard"],
+      "booking_base_url": "https://www.cinemark.com"
+    },
+    {
+      "id": "cinemark-century-redwood-downtown",
+      "name": "Century Redwood Downtown 20 and XD",
+      "chain": "cinemark",
+      "address": "825 Middlefield Rd, Redwood City, CA 94063",
+      "lat": 37.4863,
+      "lng": -122.2311,
+      "formats": ["XD", "Standard"],
+      "booking_base_url": "https://www.cinemark.com"
+    }
+  ]
+}
