@@ -207,6 +207,18 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
     # Stable ordering: theater name, then datetime.
     showtimes.sort(key=lambda s: (s.theater_name.lower(), s.start_datetime))
 
+    # Optional seat verification (Playwright): upgrade "check manually" badges for
+    # real-provider results only — never scrape synthetic demo booking URLs.
+    if provider_used in ("serpapi", "movieglu"):
+        from ..scrape.verifier import SeatVerifier
+
+        verifier = SeatVerifier()
+        if verifier.available():
+            verified, vnotes = await verifier.enrich(showtimes, req.seats_together, req.min_row)
+            notes.extend(vnotes)
+            if verified:
+                notes.append(f"Seat-verified {verified} showtime(s) via Playwright seat maps.")
+
     meta = SearchMeta(
         provider_used=provider_used,
         theaters_considered=len(candidates) or len(theaters),
