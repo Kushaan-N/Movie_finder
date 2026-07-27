@@ -43,9 +43,15 @@ class Settings(BaseSettings):
     # (100/month) and speed up repeat/form-tweak searches. 0 disables the cache.
     search_cache_ttl_sec: float = 300
 
+    # Seat verification (Playwright) — off by default; needs Playwright installed.
+    enable_seat_verification: bool = False
+    seat_verification_max: int = 12  # cap per search to bound latency / politeness
+    seat_verification_cache_ttl_sec: float = 600
+
     # Config file locations (editable JSON at repo root).
     theaters_file: str = str(REPO_ROOT / "theaters.json")
     row_mappings_file: str = str(REPO_ROOT / "row_mappings.json")
+    scrape_selectors_file: str = str(REPO_ROOT / "scrape_selectors.json")
 
     @property
     def cors_origin_list(self) -> list[str]:
