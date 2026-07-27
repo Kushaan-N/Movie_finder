@@ -1,0 +1,37 @@
+{
+  "_comment": "Per-chain row label -> physical position rules. Hand-edit as you verify chains against real seat maps. 'strategy' controls how a raw row label/order maps to a physical row number (1 = closest to screen). 'overrides' lets you pin specific (theater_id, label) -> physical_row pairs when a chain has removed rows for recliner/ADA conversions.",
+  "default_strategy": "dom_order",
+  "chains": {
+    "amc": {
+      "strategy": "letter_skip_io",
+      "note": "AMC labels rows A,B,C... skipping I and O. Many auditoriums are now recliner seating with renumbered rows, so DOM/API order is more reliable than the label. We use DOM order when available and fall back to letter parsing.",
+      "prefer_dom_order": true,
+      "overrides": {}
+    },
+    "regal": {
+      "strategy": "dom_order",
+      "note": "Mixed labeling that varies by theater. Trust DOM/API order over label.",
+      "prefer_dom_order": true,
+      "overrides": {}
+    },
+    "cinemark": {
+      "strategy": "numeric",
+      "note": "Cinemark (incl. Century, CineArts, Tinseltown) is typically numeric, but some auditoriums use letters. Confirm per response; falls back to DOM order.",
+      "prefer_dom_order": false,
+      "aliases": ["century", "cinearts", "tinseltown"],
+      "overrides": {}
+    },
+    "marcus": {
+      "strategy": "dom_order",
+      "note": "Generic fallback: DOM/API order = physical position. Raw label logged for later refinement.",
+      "prefer_dom_order": true,
+      "overrides": {}
+    },
+    "cineplex": {
+      "strategy": "dom_order",
+      "note": "Generic fallback: DOM/API order = physical position. Raw label logged for later refinement.",
+      "prefer_dom_order": true,
+      "overrides": {}
+    }
+  }
+}
