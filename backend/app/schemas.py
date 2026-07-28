@@ -101,3 +101,28 @@ class SavedSearchOut(BaseModel):
 class SavedSearchRunResponse(SearchResponse):
     saved_search_id: int
     new_count: int
+
+
+# --------------------------------------------------------------------------- #
+# On-demand seat verification
+# --------------------------------------------------------------------------- #
+class VerifySeatsRequest(BaseModel):
+    chain: str
+    booking_url: str
+    seats_together: int = Field(default=4, ge=1, le=20)
+    min_row: int = Field(default=5, ge=1, le=60)
+    theater_id: str = "single"
+
+
+class SeatGridRow(BaseModel):
+    physical_row: int
+    raw_label: Optional[str] = None
+    seats_available: list[bool]
+
+
+class VerifySeatsResponse(BaseModel):
+    available: bool  # whether verification could actually run on the server
+    seat_check: SeatCheck
+    grid: list[SeatGridRow] = Field(default_factory=list)
+    stats: dict = Field(default_factory=dict)
+    reason: Optional[str] = None
