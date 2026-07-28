@@ -1,5 +1,5 @@
 """SerpApi response parsing: relative dates, distance, format, range filter."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.providers.base import ProviderQuery
 from app.providers.serpapi_provider import SerpApiProvider, _parse_distance, _resolve_date
@@ -24,20 +24,22 @@ def test_parse_distance_units():
 
 
 def test_parse_full_response_filters_range_and_formats():
+    now = datetime.now().date()
+    far = now + timedelta(days=120)  # comfortably outside a 14-day window
     sample = {
         "showtimes": [
-            {"day": "Today", "date": "Jul 26", "theaters": [
+            {"day": "Today", "date": now.strftime("%b %d"), "theaters": [
                 {"name": "AMC Metreon 16", "address": "SF", "link": "http://a", "distance": "0.9 mi",
                  "showing": [{"type": "IMAX", "time": ["7:15pm", "9:45 PM"]},
                              {"type": "Standard", "time": ["1:00pm"]}]},
             ]},
-            {"day": "Fri", "date": "Dec 25", "theaters": [  # outside 14-day window
+            {"day": "X", "date": far.strftime("%b %d"), "theaters": [  # outside 14-day window
                 {"name": "Far Future", "showing": [{"type": "Standard", "time": ["5:00pm"]}]},
             ]},
         ]
     }
     q = ProviderQuery(movie_title="Dune", fmt="IMAX", location="SF",
-                      date_from=TODAY, date_to=TODAY + timedelta(days=14))
+                      date_from=now, date_to=now + timedelta(days=14))
     rows = SerpApiProvider()._parse(sample, q)
 
     # Only IMAX kept (format filter), Dec 25 dropped (range filter) -> 2 rows.
@@ -48,10 +50,13 @@ def test_parse_full_response_filters_range_and_formats():
 
 
 def test_format_any_keeps_all():
-    sample = {"showtimes": [{"day": "Today", "date": "Jul 26", "theaters": [
+    # "Today" resolves relative to the real current date inside _parse, so build
+    # the query window from now() rather than a hardcoded date (avoids drift).
+    now = datetime.now().date()
+    sample = {"showtimes": [{"day": "Today", "date": now.strftime("%b %d"), "theaters": [
         {"name": "T", "showing": [{"type": "IMAX", "time": ["7:00pm"]},
                                    {"type": "Dolby Cinema", "time": ["8:00pm"]}]}]}]}
     q = ProviderQuery(movie_title="X", fmt="Any", location="SF",
-                      date_from=TODAY, date_to=TODAY + timedelta(days=1))
+                      date_from=now, date_to=now + timedelta(days=1))
     rows = SerpApiProvider()._parse(sample, q)
     assert {r.format for r in rows} == {"IMAX", "Dolby"}  # "Dolby Cinema" normalized
