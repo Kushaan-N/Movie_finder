@@ -20,6 +20,8 @@ async function req(path, options = {}) {
 export const api = {
   getConfig: () => req("/api/config"),
   search: (payload) => req("/api/search", { method: "POST", body: JSON.stringify(payload) }),
+  verifySeats: (payload) =>
+    req("/api/verify-seats", { method: "POST", body: JSON.stringify(payload) }),
   listSaved: () => req("/api/saved-searches"),
   createSaved: (name, config) =>
     req("/api/saved-searches", { method: "POST", body: JSON.stringify({ name, config }) }),
