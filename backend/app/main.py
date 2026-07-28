@@ -19,6 +19,10 @@ from .schemas import (
     SavedSearchRunResponse,
     SearchRequest,
     SearchResponse,
+    SeatCheck,
+    SeatGridRow,
+    VerifySeatsRequest,
+    VerifySeatsResponse,
 )
 from .services import theaters as theaters_service
 from .services.search import run_search
@@ -55,27 +59,32 @@ app.add_middleware(
 # --------------------------------------------------------------------------- #
 # Health / config
 # --------------------------------------------------------------------------- #
-@app.get("/api/health")
-def health() -> dict:
-    playwright_installed = False
+def _playwright_installed() -> bool:
     try:
         import playwright  # noqa: F401
-        playwright_installed = True
+        return True
     except ImportError:
-        pass
+        return False
+
+
+@app.get("/api/health")
+def health() -> dict:
+    pw = _playwright_installed()
     return {
         "status": "ok",
         "serpapi": settings.has_serpapi,
         "movieglu": settings.has_movieglu,
         "scraper_fallback": settings.enable_scraper_fallback,
-        "seat_verification": settings.enable_seat_verification and playwright_installed,
-        "playwright_installed": playwright_installed,
+        "seat_verification": settings.enable_seat_verification and pw,
+        "playwright_installed": pw,
     }
 
 
 @app.get("/api/config")
 def config() -> dict:
     """Surface editable options to the UI (formats, chains, theaters)."""
+    from .scrape.verifier import SUPPORTED_CHAINS
+
     theaters = theaters_service.load_theaters()
     formats = sorted({f for t in theaters for f in t.formats} | {"IMAX", "Dolby", "Standard", "XD", "ScreenX"})
     return {
@@ -85,7 +94,50 @@ def config() -> dict:
             for t in theaters
         ],
         "provider_available": settings.has_serpapi or settings.has_movieglu or settings.enable_scraper_fallback,
+        "seat_verification": settings.enable_seat_verification and _playwright_installed(),
+        "verify_chains": sorted(SUPPORTED_CHAINS),
     }
+
+
+@app.post("/api/verify-seats", response_model=VerifySeatsResponse)
+async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
+    """Verify one showtime's seats on demand (renders the booking page + parses)."""
+    from .rows import normalize_row
+    from .scrape.verifier import SUPPORTED_CHAINS, SeatVerifier
+
+    def _cannot(reason: str, available: bool) -> VerifySeatsResponse:
+        return VerifySeatsResponse(
+            available=available,
+            seat_check=SeatCheck(
+                status="check_manually",
+                seats_together_requested=req.seats_together,
+                min_row_requested=req.min_row,
+                reason=reason,
+            ),
+            reason=reason,
+        )
+
+    verifier = SeatVerifier()
+    if not verifier.available():
+        return _cannot("Seat verification is not enabled on the server (ENABLE_SEAT_VERIFICATION).", False)
+    if req.chain not in SUPPORTED_CHAINS:
+        return _cannot(f"No seat-map parser configured for chain '{req.chain}'.", True)
+
+    check, result = await verifier.verify_url(
+        req.chain, req.booking_url, req.seats_together, req.min_row, req.theater_id
+    )
+    grid: list[SeatGridRow] = []
+    if result.ok:
+        for idx, row in enumerate(result.rows):
+            interp = normalize_row(req.chain, row.raw_label, dom_order_index=idx, theater_id=req.theater_id)
+            grid.append(
+                SeatGridRow(
+                    physical_row=interp.physical_row,
+                    raw_label=interp.raw_label,
+                    seats_available=row.seats_available,
+                )
+            )
+    return VerifySeatsResponse(available=True, seat_check=check, grid=grid, stats=result.stats, reason=result.reason)
 
 
 # --------------------------------------------------------------------------- #
