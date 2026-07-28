@@ -1,5 +1,16 @@
-import { MapPin, Ticket, CheckCircle2, HelpCircle, XCircle, ArmchairIcon } from "lucide-react";
+import { useState } from "react";
+import {
+  MapPin,
+  Ticket,
+  CheckCircle2,
+  HelpCircle,
+  XCircle,
+  ArmchairIcon,
+  ScanSearch,
+  Loader2,
+} from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui/primitives";
+import { api } from "@/lib/api";
 
 function formatBadgeTone(fmt) {
   const f = (fmt || "").toLowerCase();
@@ -31,6 +42,120 @@ function SeatBadge({ seat }) {
   );
 }
 
+// Compact seat grid preview (rows top-to-bottom = screen to back).
+function SeatGrid({ grid, minRow }) {
+  if (!grid?.length) return null;
+  return (
+    <div className="mt-2 overflow-x-auto rounded-md border border-border/60 bg-background/40 p-2">
+      <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
+        screen
+      </div>
+      <div className="space-y-0.5">
+        {grid.map((row, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span
+              className={
+                "w-24 shrink-0 text-right text-[11px] tabular-nums " +
+                (row.physical_row >= minRow ? "text-foreground" : "text-muted-foreground/50")
+              }
+            >
+              {row.raw_label ? `${row.raw_label} → ` : ""}row {row.physical_row}
+            </span>
+            <div className="flex gap-0.5">
+              {row.seats_available.map((a, j) => (
+                <span
+                  key={j}
+                  className={
+                    "h-3 w-3 rounded-[3px] " +
+                    (a ? "bg-emerald-400/80" : "bg-muted-foreground/25")
+                  }
+                  title={a ? "available" : "unavailable"}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ShowtimeCard({ st, canVerify }) {
+  const [verified, setVerified] = useState(null); // { seat_check, grid, reason, available }
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const seat = verified?.seat_check || st.seat_check;
+  const showVerifyBtn =
+    canVerify && !verified && st.seat_check.status === "check_manually" && st.booking_url;
+
+  const runVerify = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api.verifySeats({
+        chain: st.chain,
+        booking_url: st.booking_url,
+        seats_together: st.seat_check.seats_together_requested,
+        min_row: st.seat_check.min_row_requested,
+        theater_id: st.theater_id,
+      });
+      setVerified(res);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className={
+        "flex flex-col gap-2 rounded-lg border p-3 transition-colors " +
+        (st.is_new ? "border-primary/50 bg-primary/10" : "border-border/60 bg-background/30")
+      }
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-lg font-semibold tabular-nums">{st.start_time_label}</span>
+        <Badge tone={formatBadgeTone(st.format)}>{st.format}</Badge>
+        {st.is_new && <Badge tone="new">NEW</Badge>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <SeatBadge seat={seat} />
+        {seat.best_block_row?.display && (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <ArmchairIcon className="h-3.5 w-3.5" />
+            {seat.best_block_row.display}
+          </span>
+        )}
+      </div>
+
+      {verified?.grid?.length ? (
+        <SeatGrid grid={verified.grid} minRow={st.seat_check.min_row_requested} />
+      ) : null}
+      {verified && !verified.grid?.length && verified.reason && (
+        <p className="text-xs text-amber-300/80">{verified.reason}</p>
+      )}
+      {err && <p className="text-xs text-red-300">{err}</p>}
+
+      <div className="mt-1 flex flex-wrap gap-2">
+        <a href={st.booking_url || "#"} target="_blank" rel="noreferrer">
+          <Button size="sm" variant="subtle">
+            <Ticket className="h-3.5 w-3.5" /> Book
+          </Button>
+        </a>
+        {showVerifyBtn && (
+          <Button size="sm" variant="outline" onClick={runVerify} disabled={busy}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}
+            {busy ? "Checking…" : "Check seats"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function groupByTheaterThenDate(showtimes) {
   const byTheater = new Map();
   for (const st of showtimes) {
@@ -50,9 +175,16 @@ function prettyDate(iso) {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-export default function Results({ result }) {
+export default function Results({ result, config }) {
   if (!result) return null;
   const { meta, showtimes } = result;
+
+  // On-demand verification is offered only when the server can do it AND the
+  // results are real (never for synthetic demo booking URLs).
+  const verifyFor = (chain) =>
+    !!config?.seat_verification &&
+    meta.provider_used !== "demo" &&
+    (config?.verify_chains || []).includes(chain);
 
   if (!showtimes.length) {
     return (
@@ -114,43 +246,7 @@ export default function Results({ result }) {
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {times.map((st) => (
-                    <div
-                      key={st.key}
-                      className={
-                        "flex flex-col gap-2 rounded-lg border p-3 transition-colors " +
-                        (st.is_new
-                          ? "border-primary/50 bg-primary/10"
-                          : "border-border/60 bg-background/30")
-                      }
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-semibold tabular-nums">
-                            {st.start_time_label}
-                          </span>
-                          <Badge tone={formatBadgeTone(st.format)}>{st.format}</Badge>
-                          {st.is_new && <Badge tone="new">NEW</Badge>}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <SeatBadge seat={st.seat_check} />
-                        {st.seat_check.best_block_row?.display && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <ArmchairIcon className="h-3.5 w-3.5" />
-                            {st.seat_check.best_block_row.display}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-1">
-                        <a href={st.booking_url || "#"} target="_blank" rel="noreferrer">
-                          <Button size="sm" variant="subtle" className="w-full sm:w-auto">
-                            <Ticket className="h-3.5 w-3.5" /> Book
-                          </Button>
-                        </a>
-                      </div>
-                    </div>
+                    <ShowtimeCard key={st.key} st={st} canVerify={verifyFor(st.chain)} />
                   ))}
                 </div>
               </div>
