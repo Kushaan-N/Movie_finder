@@ -24,7 +24,7 @@ from typing import Optional
 
 from ..config import get_settings
 from ..providers.scraper_provider import RateLimiter, _robots_allows
-from ..schemas import Showtime
+from ..schemas import SeatCheck, Showtime
 from ..services.seatcheck import evaluate_rows
 from .seatmap import SeatMapParseResult, parse_seat_html
 
@@ -119,6 +119,25 @@ class SeatVerifier:
 
         self._cache[url] = (now, result)
         return result
+
+    async def verify_url(
+        self, chain: str, url: str, seats_together: int, min_row: int, theater_id: str = "single"
+    ) -> tuple[SeatCheck, SeatMapParseResult]:
+        """Verify a single booking URL on demand. Returns (seat_check, raw result)."""
+        try:
+            result = await self._verify_one(chain, url)
+        finally:
+            await self._close()
+        if result.ok:
+            check = evaluate_rows(result.rows, chain, theater_id, seats_together, min_row)
+        else:
+            check = SeatCheck(
+                status="check_manually",
+                seats_together_requested=seats_together,
+                min_row_requested=min_row,
+                reason=result.reason,
+            )
+        return check, result
 
     # --- public entry point ------------------------------------------------ #
     async def enrich(
