@@ -168,6 +168,20 @@ seat map, and upgrades the badge to a real 🟢 match / 🔴 no-match — honori
   read, it stays "check manually" with the reason surfaced.
 - It enriches showtimes we already have booking URLs for (it does **not** re-scrape
   showtime discovery), which is the reliable, high-value part.
+- Two ways it runs:
+  - **Up-front** (during `/api/search`, real providers only — never demo data).
+  - **On-demand**: a **"Check seats"** button appears on any "check manually" card
+    (when the server has verification enabled and the results are real). It calls
+    `POST /api/verify-seats`, upgrades the badge, and shows a **seat-grid preview**
+    with each row's physical position so you can eyeball the open block.
+
+### Proven end-to-end
+
+The full render → parse → seat-check pipeline is covered by real-browser tests
+(`tests/test_e2e_playwright.py`, `tests/test_verify_endpoint.py`): actual Chromium
+renders locally-served fixture seat pages for AMC/Regal/Cinemark and the badges
+upgrade correctly. Only the target host differs from production (localhost fixtures
+vs. a chain's live, bot-protected site — which shouldn't be scraped in tests).
 
 ### Parsing is config-driven — tune it against a real page
 
@@ -238,7 +252,8 @@ multi-user is incremental:
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/search` | Run a search (body = search config incl. `seats_together`, `min_row`) |
-| `GET` | `/api/config` | Formats + theaters for the UI |
+| `POST` | `/api/verify-seats` | Verify one showtime's seats on demand → seat check + grid preview |
+| `GET` | `/api/config` | Formats, theaters, and seat-verification availability for the UI |
 | `GET` | `/api/health` | Which providers are configured |
 | `GET` | `/api/saved-searches` | List saved searches |
 | `POST` | `/api/saved-searches` | Create/update by name |
