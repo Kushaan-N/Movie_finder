@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><title>Select Seats - Cinemark</title></head>
+<body>
+  <div class="seatingChart">
+    <!-- Cinemark / Century / Tinseltown: numeric row labels, data-availability markers.
+         Rows front-to-back; a 5-block sits at physical row 7. -->
+    <div class="seat-row" data-row-number="1">
+      <div class="seat" data-seat-number="1" data-availability="taken"></div>
+      <div class="seat" data-seat-number="2" data-availability="available"></div>
+    </div>
+    <div class="seat-row" data-row-number="2">
+      <div class="seat" data-seat-number="1" data-availability="available"></div>
+      <div class="seat" data-seat-number="2" data-availability="taken"></div>
+    </div>
+    <div class="seat-row" data-row-number="3">
+      <div class="seat" data-availability="taken"></div>
+      <div class="seat" data-availability="taken"></div>
+    </div>
+    <div class="seat-row" data-row-number="4">
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="taken"></div>
+    </div>
+    <div class="seat-row" data-row-number="5">
+      <div class="seat" data-availability="taken"></div>
+      <div class="seat" data-availability="available"></div>
+    </div>
+    <div class="seat-row" data-row-number="6">
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="taken"></div>
+    </div>
+    <!-- physical row 7 (DOM index 6): five contiguous available. -->
+    <div class="seat-row" data-row-number="7">
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="available"></div>
+      <div class="seat" data-availability="available"></div>
+    </div>
+  </div>
+</body></html>
