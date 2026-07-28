@@ -9,6 +9,7 @@ import SavedSearches from "@/components/SavedSearches";
 export default function App() {
   const [form, setForm] = useState(defaultSearch());
   const [formats, setFormats] = useState(["Any"]);
+  const [config, setConfig] = useState(null);
   const [result, setResult] = useState(null);
   const [saved, setSaved] = useState([]);
   const [activeSavedId, setActiveSavedId] = useState(null);
@@ -22,7 +23,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    api.getConfig().then((c) => setFormats(c.formats)).catch(() => {});
+    api
+      .getConfig()
+      .then((c) => {
+        setFormats(c.formats);
+        setConfig(c);
+      })
+      .catch(() => {});
     refreshSaved();
   }, []);
 
@@ -120,7 +127,7 @@ export default function App() {
           </div>
         )}
 
-        <Results result={result} />
+        <Results result={result} config={config} />
       </div>
 
       {toast && (
