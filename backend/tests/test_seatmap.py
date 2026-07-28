@@ -81,6 +81,24 @@ def test_flat_layout_grouped_by_row_attr():
     assert res.rows[1].seats_available == [True, True]
 
 
+def test_regal_fixture_parses_with_aisle_gap():
+    res = parse_seat_html("regal", _fixture("regal_seatmap.html"))
+    assert res.ok
+    assert [r.raw_label for r in res.rows] == ["AA", "BB", "CC", "DD", "EE", "FF", "GG"]
+    # Row BB: available, sold, AISLE, available -> aisle breaks the run.
+    assert res.rows[1].seats_available == [True, False, False, True]
+    # Row FF (physical row 6) holds a clean 4-block.
+    assert res.rows[5].seats_available == [True, True, True, True, False]
+
+
+def test_cinemark_fixture_numeric_rows():
+    res = parse_seat_html("cinemark", _fixture("cinemark_seatmap.html"))
+    assert res.ok
+    assert [r.raw_label for r in res.rows] == list("1234567")
+    # Row 7 (physical row 7) is fully open with 5 seats.
+    assert res.rows[6].seats_available == [True, True, True, True, True]
+
+
 def test_unknown_chain_has_no_selectors():
     res = parse_seat_html("nickelodeon", "<div class='seat'></div>")
     assert res.rows is None
