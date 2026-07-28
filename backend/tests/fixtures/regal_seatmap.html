@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><title>Choose Seats | Regal</title></head>
+<body>
+  <section class="auditorium">
+    <!-- Regal labels vary by theater; DOM order (top = screen) is authoritative.
+         Rows returned front-to-back. A qualifying 4-block sits at physical row 6. -->
+    <div class="seat-row" data-row="AA">
+      <span class="seat" data-seat="1" data-status="sold"></span>
+      <span class="seat" data-seat="2" data-status="available"></span>
+      <span class="seat" data-seat="3" data-status="sold"></span>
+    </div>
+    <div class="seat-row" data-row="BB">
+      <span class="seat" data-seat="1" data-status="available"></span>
+      <span class="seat" data-seat="2" data-status="sold"></span>
+      <span class="seat aisle"></span>
+      <span class="seat" data-seat="3" data-status="available"></span>
+    </div>
+    <div class="seat-row" data-row="CC">
+      <span class="seat" data-status="sold"></span>
+      <span class="seat" data-status="sold"></span>
+    </div>
+    <div class="seat-row" data-row="DD">
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="sold"></span>
+    </div>
+    <div class="seat-row" data-row="EE">
+      <span class="seat" data-status="sold"></span>
+      <span class="seat" data-status="available"></span>
+    </div>
+    <!-- physical row 6 (DOM index 5): four contiguous available seats. -->
+    <div class="seat-row" data-row="FF">
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="occupied"></span>
+    </div>
+    <div class="seat-row" data-row="GG">
+      <span class="seat" data-status="available"></span>
+      <span class="seat" data-status="sold"></span>
+      <span class="seat" data-status="available"></span>
+    </div>
+  </section>
+</body></html>
