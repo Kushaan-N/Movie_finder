@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+  The dangerous case: every seat is an ENABLED button, so the "interactive"
+  strategy sees no disabled control and would call the whole auditorium free.
+  Availability is really encoded in colour, and the legend says which is which.
+
+  Reporting seats as free when they are taken is the worst error this tool can
+  make, so strategy selection must prefer one that actually distinguishes two
+  states over one that returns a uniform answer.
+
+  Class names are deliberately neutral (tone-a / tone-b): if they said "free" or
+  "taken" the attribute strategy would read them and this case would never reach
+  the one being tested.
+
+  Layout: 4 rows x 12. Only row 2 has free seats (4 of them).
+-->
+<html><head><meta charset="utf-8"><title>Select seats</title>
+<style>
+  body { margin: 0; background: #0e1116; }
+  .row { display: flex; align-items: center; gap: 5px; margin: 9px 14px; height: 24px; }
+  button.seat { width: 20px; height: 20px; padding: 0; border: 1px solid #445; }
+  .tone-a { background: #35c17a; }  /* saturated green */
+  .tone-b { background: #3a3f47; }  /* desaturated grey */
+  .legend { display: flex; gap: 18px; margin: 14px; color: #fff; font: 12px sans-serif; }
+  .legend i { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="legend">
+    <span><i class="tone-a"></i> Available</span>
+    <span><i class="tone-b"></i> Occupied</span>
+  </div>
+  <script>
+    const LAYOUT = [
+      Array.from({length: 12}, () => false),
+      Array.from({length: 12}, (_, i) => i >= 4 && i <= 7),   // the only free run
+      Array.from({length: 12}, () => false),
+      Array.from({length: 12}, () => false),
+    ];
+    const map = document.getElementById('map');
+    LAYOUT.forEach((row, r) => {
+      const div = document.createElement('div');
+      div.className = 'row';
+      row.forEach((free, i) => {
+        const b = document.createElement('button');
+        // Every seat is enabled and carries no availability attribute: the only
+        // honest signal here is the colour.
+        b.className = 'seat ' + (free ? 'tone-a' : 'tone-b');
+        b.setAttribute('aria-label', `Row ${r + 1} seat ${i + 1}`);
+        div.appendChild(b);
+      });
+      map.appendChild(div);
+    });
+  </script>
+</body></html>
