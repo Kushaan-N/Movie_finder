@@ -218,6 +218,62 @@
     return null;
   }
 
+  var lastPaintSource = null;
+
+  function dist(a, b) {
+    if (!a || !b) return Infinity;
+    var dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  // Read the map's own legend instead of guessing what a colour means.
+  //
+  // Seat maps label their states in plain text ("Available", "Occupied",
+  // "Selected") next to a swatch drawn in the same colour as the seats. Verified
+  // present on AMC. Using it turns colour classification from a heuristic into
+  // something the page itself asserts, and it generalizes to any chain that ships
+  // a legend — which is effectively all of them, since human viewers need one too.
+  function legendPalette() {
+    var STATES = { available: 'avail', open: 'avail', 'seats available': 'avail',
+                   occupied: 'taken', sold: 'taken', unavailable: 'taken',
+                   taken: 'taken', 'sold out': 'taken' };
+    var labels = [];
+    var all = document.getElementsByTagName('*');
+    for (var i = 0; i < Math.min(all.length, MAX_SCAN); i++) {
+      var el = all[i];
+      if (el.childElementCount > 2) continue;
+      var t = norm(el.textContent);
+      if (t.length > 20 || !t) continue;
+      var key = t.replace(/[:*]+$/, '');
+      if (!STATES[key]) continue;
+      var r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      labels.push({ kind: STATES[key], x: r.x, y: r.y + r.height / 2 });
+    }
+    if (!labels.length) return null;
+
+    // The swatch is the nearest painted seat-sized box on the label's own line.
+    var out = { avail: [], taken: [] };
+    for (var L = 0; L < labels.length; L++) {
+      var lab = labels[L], best = null, bestD = 90;
+      for (var j = 0; j < all.length && j < MAX_SCAN; j++) {
+        var e = all[j];
+        if (e.childElementCount > 4) continue;
+        var er = e.getBoundingClientRect();
+        if (er.width < 6 || er.width > 48 || er.height < 6 || er.height > 48) continue;
+        if (Math.abs(er.y + er.height / 2 - lab.y) > 14) continue;
+        var dx = lab.x - (er.x + er.width);       // swatch sits left of the text
+        if (dx < -4 || dx > bestD) continue;
+        var p = paintOf(e);
+        if (!p || !p.rgb) continue;
+        bestD = dx; best = p.rgb;
+      }
+      if (best) out[lab.kind].push(best);
+    }
+    if (!out.avail.length) return null;
+    return out;
+  }
+
   function byPaint(cands) {
     var read = [];
     for (var i = 0; i < cands.length; i++) {
@@ -228,27 +284,39 @@
     }
     if (!read.length) return [];
 
-    var isAvail;
+    var isAvail, source;
+    var legend = palette && palette.length ? null : legendPalette();
+
     if (palette && palette.length) {
-      var want = palette.map(norm);
-      isAvail = function (rgb, el) {
-        if (!rgb) return false;
-        var hex = '#' + [rgb.r, rgb.g, rgb.b].map(function (v) {
-          var s = Math.round(v).toString(16); return s.length === 1 ? '0' + s : s;
-        }).join('');
-        return want.indexOf(hex) !== -1;
+      // Explicit hint for a known chain wins.
+      var want = [];
+      for (var w = 0; w < palette.length; w++) want.push(parseColor(palette[w]));
+      source = 'palette';
+      isAvail = function (rgb) {
+        for (var k = 0; k < want.length; k++) if (dist(rgb, want[k]) < 40) return true;
+        return false;
+      };
+    } else if (legend) {
+      source = 'legend';
+      isAvail = function (rgb) {
+        if (!rgb) return false;   // unpainted/transparent is never "available"
+        var da = Infinity, dt = Infinity, k;
+        for (k = 0; k < legend.avail.length; k++) da = Math.min(da, dist(rgb, legend.avail[k]));
+        for (k = 0; k < legend.taken.length; k++) dt = Math.min(dt, dist(rgb, legend.taken[k]));
+        return da < dt && da < 60;
       };
     } else {
-      // Unknown chain: free seats are drawn saturated, taken ones grey/outline.
-      // Split on the midpoint between the two saturation clusters.
+      // Last resort: free seats are drawn saturated, taken ones grey/outline.
       var sats = read.map(function (s) { return saturation(s.rgb); })
                      .filter(function (v) { return v >= 0; }).sort(function (a, b) { return a - b; });
       if (!sats.length) return [];
       var lo = sats[0], hi = sats[sats.length - 1];
       if (hi - lo < 0.15) return []; // one visual state only — can't tell them apart
       var mid = (lo + hi) / 2;
+      source = 'saturation';
       isAvail = function (rgb) { return saturation(rgb) > mid; };
     }
+    lastPaintSource = source;
     return read.map(function (s) { return { x: s.x, y: s.y, available: !!isAvail(s.rgb) }; });
   }
 
@@ -314,7 +382,7 @@
         rows: rows,
         stats: {
           seats_found: s.seats, rows_found: s.rows, available_found: avail,
-          candidates: cands.length, tried: tried
+          candidates: cands.length, tried: tried, colour_source: lastPaintSource
         },
         url: location.href,
         title: document.title
