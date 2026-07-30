@@ -88,8 +88,13 @@
   // Deduping runs per strategy, on the seats a strategy has already classified,
   // NOT on raw candidates. Doing it up front picked whichever nested box was
   // largest -- the unpainted wrapper -- and destroyed the availability signal the
-  // paint strategy needed. Each strategy only emits elements it could read, so any
-  // survivor at a position is equally good.
+  // paint strategy needed.
+  //
+  // At a given position the survivor must be the most authoritative reading, not
+  // an arbitrary one: an explicit SVG fill (rank 3) beats a computed background
+  // (2) beats a bare border (1). Keeping an arbitrary element inverted AMC's map,
+  // because a seat wrapper's background happened to sit near the legend's
+  // "available" swatch while the real seat was a transparent gradient.
   function dedupeSeats(seats, tol) {
     tol = tol || 6;
     var kept = [];
@@ -97,8 +102,9 @@
       var s = seats[i], dup = false;
       for (var j = 0; j < kept.length; j++) {
         if (Math.abs(kept[j].x - s.x) < tol && Math.abs(kept[j].y - s.y) < tol) {
-          // Prefer a real seat over a gap marker at the same spot.
-          if (kept[j].gap && !s.gap) kept[j] = s;
+          var better = (kept[j].gap && !s.gap) ||
+                       ((s.rank || 0) > (kept[j].rank || 0));
+          if (better) kept[j] = s;
           dup = true; break;
         }
       }
@@ -205,16 +211,16 @@
           var rgb = parseColor(stops[i].getAttribute('stop-color'));
           if (rgb && saturation(rgb) > saturation(best)) best = rgb;
         }
-        return { rgb: best }; // rgb null == every stop transparent == taken
+        return { rgb: best, rank: 3 }; // rgb null == all stops transparent == taken
       }
-      return { rgb: parseColor(fill) };
+      return { rgb: parseColor(fill), rank: 3 };
     }
     var cs = window.getComputedStyle(el);
     var bg = parseColor(cs.backgroundColor);
-    if (bg) return { rgb: bg };
+    if (bg) return { rgb: bg, rank: 2 };
     // A visible border with no fill is still a drawn seat (outline = taken).
     var bw = parseFloat(cs.borderTopWidth || '0');
-    if (bw > 0 && parseColor(cs.borderTopColor)) return { rgb: null };
+    if (bw > 0 && parseColor(cs.borderTopColor)) return { rgb: null, rank: 1 };
     return null;
   }
 
@@ -280,7 +286,7 @@
       var c = cands[i];
       var p = paintOf(c.el);
       if (!p) continue; // no paint declared -> not a seat
-      read.push({ x: c.x, y: c.y, rgb: p.rgb });
+      read.push({ x: c.x, y: c.y, rgb: p.rgb, rank: p.rank });
     }
     if (!read.length) return [];
 
@@ -317,7 +323,9 @@
       isAvail = function (rgb) { return saturation(rgb) > mid; };
     }
     lastPaintSource = source;
-    return read.map(function (s) { return { x: s.x, y: s.y, available: !!isAvail(s.rgb) }; });
+    return read.map(function (s) {
+      return { x: s.x, y: s.y, available: !!isAvail(s.rgb), rank: s.rank };
+    });
   }
 
   // --- shared: cluster into rows ------------------------------------------ //
