@@ -25,6 +25,10 @@
  * Returns: {ok, strategy, rows:[[{available,gap}]], stats:{...}, reason}
  * Never guesses: if no strategy produces a plausible auditorium it returns
  * ok:false with a reason, and the caller keeps "check manually".
+ *
+ * This file is a bare function EXPRESSION (no trailing semicolon) so every
+ * consumer can invoke it directly -- page.evaluate("(<src>)({})") from Playwright,
+ * or inlined into a bookmarklet. Keep it that way.
  */
 (function (options) {
   options = options || {};
@@ -286,4 +290,4 @@
     url: location.href,
     title: document.title
   };
-});
+})
