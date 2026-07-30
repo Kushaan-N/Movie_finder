@@ -56,12 +56,14 @@ function SeatRow({ row, minRow }) {
   );
 }
 
-export default function BrowserSeatCheck({ form, config }) {
+export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
   const [payload, setPayload] = useState(null);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [pasted, setPasted] = useState("");
+  const [applyKey, setApplyKey] = useState("");
+  const [applied, setApplied] = useState(false);
 
   // Pick up a grid handed over by the bookmarklet.
   useEffect(() => {
@@ -74,7 +76,11 @@ export default function BrowserSeatCheck({ form, config }) {
   }, []);
 
   useEffect(() => {
-    if (payload) submit(payload);
+    if (payload) {
+      setApplied(false);
+      setApplyKey("");
+      submit(payload);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
@@ -108,6 +114,24 @@ export default function BrowserSeatCheck({ form, config }) {
     } catch (e) {
       setErr("Could not read that clipboard payload: " + e.message);
     }
+  };
+
+  // Only offer showtimes the grid could plausibly belong to. The chain is inferred
+  // server-side from the seat page's own URL, so it is more trustworthy than
+  // anything the page could claim.
+  const inferredChain = result?.stats?.chain;
+  const inferredTheater = result?.stats?.theater_id;
+  const candidates = showtimes.filter((st) => {
+    if (inferredTheater && inferredTheater !== "single") return st.theater_id === inferredTheater;
+    if (inferredChain && inferredChain !== "unknown") return st.chain === inferredChain;
+    return true;
+  });
+
+  const apply = () => {
+    const st = candidates.find((s) => s.key === applyKey);
+    if (!st || !result?.seat_check) return;
+    onApply?.(st.key, result.seat_check);
+    setApplied(true);
   };
 
   const setupUrl =
@@ -180,6 +204,48 @@ export default function BrowserSeatCheck({ form, config }) {
             Compare this against the map on screen — it was read from the rendered
             page, not from a documented API.
           </p>
+
+          {candidates.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+              <label className="text-xs text-muted-foreground" htmlFor="apply-to">
+                Apply to
+              </label>
+              <select
+                id="apply-to"
+                className="max-w-[22rem] rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs"
+                value={applyKey}
+                onChange={(e) => {
+                  setApplyKey(e.target.value);
+                  setApplied(false);
+                }}
+              >
+                <option value="">Choose a showtime…</option>
+                {candidates.map((st) => (
+                  <option key={st.key} value={st.key}>
+                    {st.start_datetime.slice(5, 10)} {st.start_time_label} · {st.format} ·{" "}
+                    {st.theater_name}
+                  </option>
+                ))}
+              </select>
+              <Button size="sm" variant="outline" onClick={apply} disabled={!applyKey || applied}>
+                {applied ? "Applied" : "Apply"}
+              </Button>
+              {applied && (
+                <span className="text-xs text-emerald-300">
+                  That showtime's badge now reflects this grid.
+                </span>
+              )}
+            </div>
+          )}
+          {result && candidates.length === 0 && showtimes.length > 0 && (
+            <p className="text-[11px] text-amber-300/80">
+              None of the current results are at{" "}
+              {inferredTheater && inferredTheater !== "single"
+                ? inferredTheater
+                : inferredChain || "this chain"}
+              , so there is nothing to attach this to. Search that theater first.
+            </p>
+          )}
         </div>
       )}
 
