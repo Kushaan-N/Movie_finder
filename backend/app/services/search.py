@@ -278,7 +278,13 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
     # Optional seat verification (Playwright): upgrade "check manually" badges for
     # real-provider results only — never scrape synthetic demo booking URLs.
-    if provider_used in ("serpapi", "movieglu"):
+    # Opt-in only: see settings.seat_verification_on_search for why this is not the
+    # default. Per-showtime verification stays available on demand, and the
+    # browser-assisted path covers the chains the server cannot read at all.
+    if (
+        get_settings().seat_verification_on_search
+        and provider_used in ("serpapi", "movieglu")
+    ):
         from ..scrape.verifier import SeatVerifier
 
         verifier = SeatVerifier()
