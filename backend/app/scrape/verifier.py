@@ -17,13 +17,22 @@ against live pages on 2026-07-29:
 2. **One parser could not cover the chains.** They differ fundamentally, so
    extraction is per-chain by strategy (see scrape_selectors.json):
 
-   * ``cinemark`` → ``dom``: explicit ``button[available="True|False"]`` inside
-     ``.seatRow``, with real labels. Parsed by the selector engine in seatmap.py.
    * ``amc`` → ``geometry``: no seat attributes and no text at all (labels are
      SVG glyph paths), so seats are recovered from layout geometry and resolved
-     gradient fills. See scrape.geometry.
-   * ``regal`` → ``blocked``: its seat page is behind a Cloudflare CAPTCHA.
-     Solving that is out of bounds, so we report why and leave the badge alone.
+     gradient fills. See scrape.geometry. This is the only chain that yields a
+     full seat map.
+   * ``regal`` → ``capacity``: its seat page is behind a Cloudflare CAPTCHA, so
+     the exact map is unreachable. Its listing IS reachable and publishes
+     sold-out state, which settles the seat question for the shows it marks —
+     zero seats cannot seat any group — so those become a real no-match instead
+     of "check manually".
+   * ``cinemark`` → ``dom`` but ``disabled``: its markup is the cleanest of the
+     three, yet robots.txt disallows /TicketSeatMap, so we must not fetch it. The
+     parser stays verified and ready if that policy changes.
+
+Neither Regal nor Cinemark can be "fixed" by better parsing: one is a CAPTCHA and
+the other is the site's stated crawling policy. Both are reported as such rather
+than worked around.
 
 Safety / politeness:
   * off unless ENABLE_SEAT_VERIFICATION=true and Playwright is installed
@@ -84,19 +93,31 @@ def _strategy(chain: str) -> str:
     return str(cfg.get("strategy") or "dom").lower()
 
 
+def _unavailable_reason(cfg: dict) -> Optional[str]:
+    """Why a chain cannot be verified at all, if that's the case.
+
+    Two distinct cases, both the chain's decision rather than a parser gap:
+    ``disabled`` means the site forbids fetching its seat map (Cinemark's
+    robots.txt), and the ``blocked`` strategy means it cannot be reached
+    (Regal's CAPTCHA — though Regal still yields sold-out state, see the
+    ``capacity`` strategy).
+    """
+    if cfg.get("disabled"):
+        return cfg.get("disabled_reason") or "Seat verification is disabled for this chain."
+    if str(cfg.get("strategy") or "dom").lower() == "blocked":
+        return cfg.get("blocked_reason") or "Seat verification is not possible for this chain."
+    return None
+
+
 def verifiable_chains() -> set[str]:
-    """Chains we can actually verify — i.e. configured and not `blocked`."""
+    """Chains that can produce a real seat answer — full map or sold-out state."""
     from .seatmap import _load_selectors
 
     return {
         name
         for name, cfg in (_load_selectors().get("chains") or {}).items()
-        if str(cfg.get("strategy") or "dom").lower() != "blocked"
+        if _unavailable_reason(cfg) is None
     }
-
-
-# Kept as a module attribute for callers/tests that import it by name.
-SUPPORTED_CHAINS = {"amc", "cinemark"}
 
 
 class SeatVerifier:
@@ -242,34 +263,49 @@ class SeatVerifier:
                 return t.chain_slug
         return ""
 
+    async def _get_listing(
+        self, chain: str, theater_id: str, start: datetime, cfg: dict
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Fetch the chain's showtimes listing for a theater/date.
+
+        Returns (html, listing_url, reason). Cached per (chain, slug, date) so N
+        showtimes at one theater on one date cost a single load.
+        """
+        slug = self._theater_slug(theater_id)
+        if not slug:
+            return None, None, f"No chain_slug in theaters.json for '{theater_id}'"
+
+        listing = resolver.listing_url(chain, slug, start)
+        if not listing:
+            return None, None, "Could not build a chain listing URL"
+
+        key = (chain, slug, start.strftime("%Y-%m-%d"))
+        now = time.time()
+        hit = self._listing_cache.get(key)
+        if hit and (now - hit[0]) < self._cache_ttl:
+            return hit[1], listing, None
+
+        allowed, why = await self._robots_ok(listing)
+        if not allowed:
+            return None, listing, (
+                why or "The chain's robots.txt disallows its showtimes listing"
+            )
+        await self._limiter.acquire()
+        html, _, reason = await self._fetch_page(listing, cfg)
+        if html is None:
+            return None, listing, reason or "Could not load the chain showtimes listing"
+        self._listing_cache[key] = (now, html)
+        return html, listing, None
+
     async def _resolve_seat_url(
         self, chain: str, theater_id: str, start: datetime, cfg: dict
     ) -> tuple[Optional[str], Optional[str]]:
         """Find the chain's seat URL for a showtime. Returns (url, reason)."""
         if not resolver.supports(chain):
             return None, f"No seat-URL resolver for chain '{chain}'"
-        slug = self._theater_slug(theater_id)
-        if not slug:
-            return None, f"No chain_slug in theaters.json for '{theater_id}'"
-
-        listing = resolver.listing_url(chain, slug, start)
-        if not listing:
-            return None, "Could not build a chain listing URL"
-
-        key = (chain, slug, start.strftime("%Y-%m-%d"))
-        now = time.time()
-        hit = self._listing_cache.get(key)
-        if hit and (now - hit[0]) < self._cache_ttl:
-            html = hit[1]
-        else:
-            allowed, why = await self._robots_ok(listing)
-            if not allowed:
-                return None, why or "The chain's robots.txt disallows its showtimes listing"
-            await self._limiter.acquire()
-            html, _, reason = await self._fetch_page(listing, cfg)
-            if html is None:
-                return None, reason or "Could not load the chain showtimes listing"
-            self._listing_cache[key] = (now, html)
+        html, listing, reason = await self._get_listing(chain, theater_id, start, cfg)
+        if html is None:
+            return None, reason
 
         url = resolver.resolve_from_listing(chain, html or "", start, base=listing)
         if not url:
@@ -278,14 +314,40 @@ class SeatVerifier:
 
     # --- extraction -------------------------------------------------------- #
     async def _verify_one(
-        self, chain: str, theater_id: str, start: datetime
+        self, chain: str, theater_id: str, start: datetime, movie_title: str = ""
     ) -> SeatMapParseResult:
         cfg = _chain_cfg(chain)
         if not cfg:
             return SeatMapParseResult(None, reason=f"No seat-map config for chain '{chain}'")
 
+        unavailable = _unavailable_reason(cfg)
+        if unavailable:
+            return SeatMapParseResult(None, reason=unavailable)
+
         strategy = _strategy(chain)
-        if strategy == "blocked":
+        if strategy == "capacity":
+            # The seat map is unreachable, but the listing publishes sold-out
+            # state, which settles the seat question for the one case it proves.
+            html, _, reason = await self._get_listing(chain, theater_id, start, cfg)
+            if html is None:
+                return SeatMapParseResult(None, reason=reason)
+            sold = resolver.find_sold_out(chain, html, movie_title, start)
+            if sold is True:
+                return SeatMapParseResult(
+                    None,
+                    sold_out=True,
+                    reason=cfg.get("sold_out_reason")
+                    or "This showtime is sold out, so no seats are available.",
+                )
+            if sold is False:
+                return SeatMapParseResult(
+                    None,
+                    reason=cfg.get("not_sold_out_reason")
+                    or (
+                        "Seats are still on sale, but the exact seat map can't be "
+                        "read for this chain."
+                    ),
+                )
             return SeatMapParseResult(
                 None,
                 reason=cfg.get("blocked_reason")
@@ -322,24 +384,40 @@ class SeatVerifier:
         self._cache[seat_url] = (now, result)
         return result
 
+    @staticmethod
+    def _check_from(
+        result: SeatMapParseResult, chain: str, theater_id: str,
+        seats_together: int, min_row: int,
+    ) -> SeatCheck:
+        """Turn a parse result into a seat check, including the sold-out shortcut."""
+        if result.ok:
+            return evaluate_rows(result.rows, chain, theater_id, seats_together, min_row)
+        if result.sold_out:
+            # Zero seats available is a real answer, not an unknown.
+            return SeatCheck(
+                status="no_match",
+                seats_together_requested=seats_together,
+                min_row_requested=min_row,
+                best_block_size=None,
+                reason=result.reason,
+            )
+        return SeatCheck(
+            status="check_manually",
+            seats_together_requested=seats_together,
+            min_row_requested=min_row,
+            reason=result.reason,
+        )
+
     async def verify_showtime(
-        self, chain: str, theater_id: str, start: datetime, seats_together: int, min_row: int
+        self, chain: str, theater_id: str, start: datetime, seats_together: int,
+        min_row: int, movie_title: str = "",
     ) -> tuple[SeatCheck, SeatMapParseResult]:
         """Verify one showtime on demand. Returns (seat_check, raw result)."""
         try:
-            result = await self._verify_one(chain, theater_id, start)
+            result = await self._verify_one(chain, theater_id, start, movie_title)
         finally:
             await self._close()
-        if result.ok:
-            check = evaluate_rows(result.rows, chain, theater_id, seats_together, min_row)
-        else:
-            check = SeatCheck(
-                status="check_manually",
-                seats_together_requested=seats_together,
-                min_row_requested=min_row,
-                reason=result.reason,
-            )
-        return check, result
+        return self._check_from(result, chain, theater_id, seats_together, min_row), result
 
     # --- public entry point ------------------------------------------------ #
     async def enrich(
@@ -360,9 +438,9 @@ class SeatVerifier:
             if st.seat_check.status == "check_manually" and st.chain not in ok_chains
         }
         for chain in sorted(c for c in skipped if c):
-            cfg = _chain_cfg(chain) or {}
-            if cfg.get("blocked_reason"):
-                notes.append(cfg["blocked_reason"])
+            why = _unavailable_reason(_chain_cfg(chain) or {})
+            if why:
+                notes.append(why)
 
         if not candidates:
             return 0, notes
@@ -373,19 +451,29 @@ class SeatVerifier:
             )
             candidates = candidates[:cap]
 
-        verified = 0
+        verified = sold_out = 0
         try:
             for st in candidates:
-                result = await self._verify_one(st.chain, st.theater_id, st.start_datetime)
-                if result.ok:
-                    st.seat_check = evaluate_rows(
-                        result.rows, st.chain, st.theater_id, seats_together, min_row
+                result = await self._verify_one(
+                    st.chain, st.theater_id, st.start_datetime, st.movie_title
+                )
+                if result.ok or result.sold_out:
+                    st.seat_check = self._check_from(
+                        result, st.chain, st.theater_id, seats_together, min_row
                     )
-                    verified += 1
+                    if result.sold_out:
+                        sold_out += 1
+                    else:
+                        verified += 1
                 else:
                     # Keep it "check manually" but surface why verification didn't stick.
                     st.seat_check.reason = result.reason or st.seat_check.reason
         finally:
             await self._close()
 
+        if sold_out:
+            notes.append(
+                f"{sold_out} showtime(s) are sold out per the chain's listing, so they "
+                "cannot seat your group."
+            )
         return verified, notes
