@@ -352,10 +352,23 @@ DOM (Cinemark) strategies plus the blocked chain. Fixtures mirror markup capture
 from the live sites; only the host differs, since the real sites are bot-protected
 and shouldn't be hit from tests.
 
-Verified against production directly on 2026-07-29: AMC Metreon 16, Sat Aug 1
-10:30 PM returned 186 seats in 9 rows with 45 available — `[20, 18, 7, 0, 0, …]`
-front-to-back, matching a screenshot of the same map. The same day, Regal Hacienda
-Crossings returned 20 showtimes for The Odyssey with 5 correctly flagged sold out.
+Verified against production on 2026-07-30: AMC Metreon 16, The Odyssey, Sat Aug 1
+10:30 PM returned **153 of 159 seats free across 8 rows**, matching a screenshot of
+that map (almost entirely purple). AMC Eastridge 15 at 6:00 PM the same day returned
+72 free across 12 rows. Regal Hacienda Crossings returned 20 showtimes for The
+Odyssey with 5 correctly flagged sold out.
+
+> Two bugs found by comparing against screenshots rather than trusting the numbers,
+> both of which produced confident-but-wrong answers:
+>
+> * **Showtimes were matched on time alone**, so a 6:00 PM "The Odyssey" request
+>   resolved to *Spider-Man*'s seat map and reported its availability as the answer.
+>   Showtimes are now scoped to their own film via the `/movies/<slug>` link that
+>   each chain wraps a film's times in.
+> * **The seat palette was hardcoded** from one auditorium. AMC themes auditoriums
+>   differently, so the same code read 0 available at Eastridge for a map that was
+>   largely open. Availability now comes from the page's own legend, and the server
+>   shares the bookmarklet's extractor so there is only one to keep honest.
 
 ### Parsing is config-driven — tune it against a real page
 
