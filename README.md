@@ -28,11 +28,11 @@ auth later is additive, not a rewrite.
   that are new since the last run.
 - Seat-check status badges: 🟢 match / 🟡 check manually / 🔴 no block — and it
   **never fabricates** a match when a seat map can't be parsed.
-- **Playwright seat verification** (AMC only — Cinemark's robots.txt disallows its
-  seat map and Regal uses a CAPTCHA): renders the chain's seat page, reads the map,
-  and upgrades "check manually"
-  into a real match/no-match — with an offline debug harness to tune selectors
-  against real pages. Rate-limited, robots-aware, canvas/login-wall safe.
+- **Playwright seat verification**: reads AMC's real seat map and upgrades "check
+  manually" into a real match/no-match with the physical row. Regal yields sold-out
+  state only (its seat page is CAPTCHA-gated) and Cinemark none (its robots.txt
+  disallows the seat map) — each says which and why. Rate-limited, robots-aware,
+  canvas/login-wall safe, with an offline harness to re-verify against real pages.
 - **Radius filtering on live data**: SerpApi's per-theater distance is parsed and
   applied to the radius, not just theaters matched to `theaters.json`.
 - **Short-TTL search cache** (default 5 min, `SEARCH_CACHE_TTL_SEC`) to conserve the
@@ -159,7 +159,7 @@ implemented in
 | 1 | SerpApi Google Showtimes | `SERPAPI_KEY` | No → "check manually" |
 | 2 | MovieGlu | `MOVIEGLU_*` creds | No → "check manually" |
 | 3 | Playwright scraper (Fandango/AMC/Regal/Cinemark) | `ENABLE_SCRAPER_FALLBACK=true` | Yes, per-chain parser |
-| — | Seat verification (enriches the above) | `ENABLE_SEAT_VERIFICATION=true` | AMC only — see below |
+| — | Seat verification (enriches the above) | `ENABLE_SEAT_VERIFICATION=true` | AMC full map; Regal sold-out only — see below |
 | 4 | Demo (synthetic) | *auto when nothing above is set* | Yes (fabricated for demo) |
 
 Each falls back to the next when unavailable or empty. The scraper is rate-limited and
@@ -183,14 +183,15 @@ Each chain was checked against its live seat page on **2026-07-29**. They differ
 enough that one parser cannot cover them, and two of the three cannot be automated
 at all. This is the honest state, not a to-do list:
 
-| Chain | Status | Why |
+| Chain | What you get | Why |
 |---|---|---|
-| **AMC** | ✅ **Works** | Seat page needs no login and its `robots.txt` permits it. No `<canvas>` — but also no seat attributes and **no `<text>` at all** (labels are SVG `<path>` glyphs), so seats are recovered from layout **geometry** plus resolved **gradient fills**. |
-| **Cinemark** | ❌ Disallowed | Its markup is the cleanest of the three (`button[available="True\|False"]` inside `.seatRow`), but `robots.txt` explicitly disallows `/TicketSeatMap` — the seat map itself. The parser is implemented and tested, and stays unused. |
-| **Regal** | ❌ Blocked | The seat page presents a Cloudflare **Turnstile CAPTCHA**. Solving or bypassing it is out of bounds. |
+| **AMC** | ✅ **Full seat map** | Seat page needs no login and its `robots.txt` permits it. No `<canvas>` — but also no seat attributes and **no `<text>` at all** (labels are SVG `<path>` glyphs), so seats are recovered from layout **geometry** plus resolved **gradient fills**. |
+| **Regal** | ⚠️ **Sold-out only** | The seat page is behind a Cloudflare **Turnstile CAPTCHA**, so the exact map is unreachable. Its *listing* is reachable and permitted, and publishes sold-out state (`<button disabled aria-label="…, sold out">`) — which settles the question for those shows: zero seats can't seat any group, so they become a real 🔴 no-match. Everything else stays "check manually". |
+| **Cinemark** | ❌ **Nothing** | Its markup is the cleanest of the three (`button[available="True\|False"]` inside `.seatRow`), but `robots.txt` explicitly disallows `/TicketSeatMap` — the seat map itself. Its listing carries no capacity hint either. The parser is implemented and tested, and stays disabled; flip `disabled` in `scrape_selectors.json` if that policy ever changes. |
 
-Verification of a blocked chain doesn't fail vaguely — the UI is told the actual
-reason ("Regal gates seat selection behind a Cloudflare CAPTCHA").
+**Neither Regal nor Cinemark can be fixed by better parsing.** One is a CAPTCHA,
+the other is the site's stated crawling policy. Both are reported as such — the UI
+gets the actual reason, never a vague failure.
 
 ### How a showtime becomes a seat map
 
@@ -199,7 +200,12 @@ is resolved from the chain's own listing (`app/scrape/resolver.py`): one listing
 load per theater/date, cached and shared across that date's showtimes.
 
   * AMC — `/movie-theatres/<slug>/showtimes?date=…` → `/showtimes/<id>/seats`
+  * Regal — `/theatres/<slug>?date=MM-DD-YYYY` → sold-out state only
   * Cinemark — `/theatres/<slug>?showDate=…` → `/TicketSeatMap/?…` *(disallowed)*
+
+On a Regal listing a showtime is attributed to its film via the nearest ancestor
+carrying a `/movies/<slug>` link — one listing holds 100+ times across many movies
+at overlapping slots, so matching on time alone would report the wrong film.
 
 `chain_slug` in `theaters.json` maps each theater to its path on the chain's site.
 
@@ -233,7 +239,8 @@ and shouldn't be hit from tests.
 
 Verified against production directly on 2026-07-29: AMC Metreon 16, Sat Aug 1
 10:30 PM returned 186 seats in 9 rows with 45 available — `[20, 18, 7, 0, 0, …]`
-front-to-back, matching a screenshot of the same map.
+front-to-back, matching a screenshot of the same map. The same day, Regal Hacienda
+Crossings returned 20 showtimes for The Odyssey with 5 correctly flagged sold out.
 
 ### Parsing is config-driven — tune it against a real page
 
