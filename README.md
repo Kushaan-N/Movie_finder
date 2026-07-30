@@ -267,6 +267,10 @@ selectors from. It tries three independent strategies and reports which fired:
 | `interactive` | seat is a live control; taken seats are `disabled` | Regal-style listings |
 | `paint` | availability exists only visually | AMC (SVG gradient stop-colors) |
 
+A strategy must also produce an **auditorium-shaped** reading — rows several seats
+wide. Without that check, one strategy scored 224 scattered elements as 224 rows of a
+single seat, cleared the row-count threshold and beat the correct reading.
+
 A strategy that found **both** states beats one that returned a uniform answer.
 That matters because reporting taken seats as free is the worst error the tool can
 make, and `interactive` produces exactly that on a map where selection is JS-driven
@@ -294,6 +298,22 @@ with no showtimes and there would be nothing to attach the verdict to.
 > `Access-Control-Allow-Private-Network`. So the grid is handed over by *navigation*
 > (a URL fragment) with a clipboard copy as fallback, and the extractor is inlined
 > rather than loaded from localhost, for the same reason.
+
+### Checking that links land where they claim
+
+`backend/scripts/verify_links.py` runs a real search and opens every distinct
+(theatre, date) destination it produced, asserting the page is the right theatre, the
+right date and lists the film — reading the chain's own rendered date control rather
+than trusting the URL. A bot challenge is reported as *unverifiable*, never as a
+failure, since it says nothing about the link.
+
+```bash
+cd backend && .venv/bin/python scripts/verify_links.py --movie "The Odyssey"
+```
+
+All 10 targets for The Odyssey (5 theatres x 2 dates) check out. Cinemark's four
+serve a challenge to automation and were confirmed in a normal browser, showing
+"Fri7/31" / "Sat8/1" selected with ~100 showtime links each.
 
 ### Re-verifying the whole flow
 
