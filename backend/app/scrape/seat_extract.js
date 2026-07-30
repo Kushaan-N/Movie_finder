@@ -247,34 +247,44 @@
     var STATES = { available: 'avail', open: 'avail', 'seats available': 'avail',
                    occupied: 'taken', sold: 'taken', unavailable: 'taken',
                    taken: 'taken', 'sold out': 'taken' };
-    var labels = [];
+    // Single pass: collect the state labels and every possible swatch at once.
+    // Scanning the whole document again per label would be quadratic, and paintOf
+    // forces style resolution, so that cost is real on a large page.
+    var labels = [], swatches = [];
     var all = document.getElementsByTagName('*');
-    for (var i = 0; i < Math.min(all.length, MAX_SCAN); i++) {
+    var n = Math.min(all.length, MAX_SCAN);
+    for (var i = 0; i < n; i++) {
       var el = all[i];
-      if (el.childElementCount > 2) continue;
-      var t = norm(el.textContent);
-      if (t.length > 20 || !t) continue;
-      var key = t.replace(/[:*]+$/, '');
-      if (!STATES[key]) continue;
+      if (el.childElementCount > 4) continue;
       var r = el.getBoundingClientRect();
-      if (!r.width) continue;
-      labels.push({ kind: STATES[key], x: r.x, y: r.y + r.height / 2 });
-    }
-    if (!labels.length) return null;
+      if (!r.width || !r.height) continue;
 
-    // The swatch is the nearest painted seat-sized box on the label's own line.
+      if (el.childElementCount <= 2) {
+        var t = norm(el.textContent);
+        if (t && t.length <= 20) {
+          var key = t.replace(/[:*]+$/, '');
+          if (STATES[key]) {
+            labels.push({ kind: STATES[key], x: r.x, y: r.y + r.height / 2 });
+            continue;
+          }
+        }
+      }
+      if (r.width >= 6 && r.width <= 48 && r.height >= 6 && r.height <= 48) {
+        swatches.push({ el: el, right: r.x + r.width, y: r.y + r.height / 2 });
+      }
+    }
+    if (!labels.length || !swatches.length) return null;
+
+    // The swatch is the nearest painted box on the label's own line, to its left.
     var out = { avail: [], taken: [] };
     for (var L = 0; L < labels.length; L++) {
       var lab = labels[L], best = null, bestD = 90;
-      for (var j = 0; j < all.length && j < MAX_SCAN; j++) {
-        var e = all[j];
-        if (e.childElementCount > 4) continue;
-        var er = e.getBoundingClientRect();
-        if (er.width < 6 || er.width > 48 || er.height < 6 || er.height > 48) continue;
-        if (Math.abs(er.y + er.height / 2 - lab.y) > 14) continue;
-        var dx = lab.x - (er.x + er.width);       // swatch sits left of the text
+      for (var j = 0; j < swatches.length; j++) {
+        var sw = swatches[j];
+        if (Math.abs(sw.y - lab.y) > 14) continue;
+        var dx = lab.x - sw.right;
         if (dx < -4 || dx > bestD) continue;
-        var p = paintOf(e);
+        var p = paintOf(sw.el);
         if (!p || !p.rgb) continue;
         bestD = dx; best = p.rgb;
       }
