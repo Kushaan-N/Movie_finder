@@ -3,7 +3,7 @@
 Exercised against Cinemark, the one chain that actually serves a parseable
 attribute contract. The previous version of this file tested invented AMC and
 Regal markup that does not exist on either site — AMC renders seats as SVG paths
-with no attributes (see scrape.geometry) and Regal's seat page is CAPTCHA-gated —
+with no attributes (see scrape.extract) and Regal's seat page is CAPTCHA-gated —
 so those fixtures were deleted rather than left to imply coverage.
 """
 import os

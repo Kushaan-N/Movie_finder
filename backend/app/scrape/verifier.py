@@ -19,7 +19,7 @@ against live pages on 2026-07-29:
 
    * ``amc`` → ``geometry``: no seat attributes and no text at all (labels are
      SVG glyph paths), so seats are recovered from layout geometry and resolved
-     gradient fills. See scrape.geometry. This is the only chain that yields a
+     gradient fills. See scrape.extract. This is the only chain that yields a
      full seat map.
    * ``regal`` → ``capacity``: its seat page is behind a Cloudflare CAPTCHA, so
      the exact map is unreachable. Its listing IS reachable and publishes
