@@ -35,6 +35,9 @@
   var ROW_TOL = options.rowTolerancePx || 12;
   var AISLE = options.aisleGapFactor || 1.8;
   var palette = options.availableColors || null; // optional known-chain hint
+  // Hard caps so a huge page cannot hang the renderer.
+  var MAX_SCAN = options.maxScan || 60000;
+  var MAX_CANDIDATES = options.maxCandidates || 4000;
 
   var AVAIL_TOKENS = ['available', 'open', 'unsold', 'sellable', 'free', 'true'];
   var TAKEN_TOKENS = ['unavailable', 'taken', 'sold', 'occupied', 'held', 'broken', 'false'];
@@ -49,16 +52,26 @@
 
   // --- candidate collection ------------------------------------------------ //
   // Seat-sized, laid-out elements. Deliberately broad; strategies filter further.
+  //
+  // Performance matters here: real seat pages are megabytes with tens of
+  // thousands of nodes, so this stays a single linear pass. Anything per-candidate
+  // that walks a subtree (querySelectorAll) would make it quadratic and hang the
+  // renderer — measured on AMC's page, which froze the tab.
   function candidates() {
-    var all = document.querySelectorAll('*');
+    var all = document.getElementsByTagName('*');
+    var n = Math.min(all.length, MAX_SCAN);
     var out = [];
-    for (var i = 0; i < all.length; i++) {
+    for (var i = 0; i < n; i++) {
       var el = all[i];
+      // Seats are leaves or near-leaves; skip containers cheaply and without
+      // touching their subtrees.
+      if (el.childElementCount > 4) continue;
       var r = el.getBoundingClientRect();
       if (r.width < SEAT_MIN || r.width > SEAT_MAX) continue;
       if (r.height < SEAT_MIN || r.height > SEAT_MAX) continue;
-      // Skip wrappers that merely contain another candidate-sized element.
+      if (r.width === 0 || r.height === 0) continue;
       out.push({ el: el, x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width });
+      if (out.length >= MAX_CANDIDATES) break;
     }
     return out;
   }
@@ -137,7 +150,8 @@
   // Resolve an element's paint: an svg seat's gradient stops, else its own fill
   // or background colour.
   function paintOf(el) {
-    var svg = el.tagName === 'svg' ? el : el.querySelector && el.querySelector('svg');
+    var svg = el.tagName === 'svg' ? el
+            : (el.firstElementChild && el.firstElementChild.tagName === 'svg' ? el.firstElementChild : null);
     var path = (svg && svg.querySelector) ? svg.querySelector('path,rect,circle,polygon') : null;
     var target = path || el;
     var fill = target.getAttribute && target.getAttribute('fill');
@@ -165,8 +179,6 @@
     var read = [];
     for (var i = 0; i < cands.length; i++) {
       var c = cands[i];
-      // Only leaf-ish elements: avoid counting a row wrapper as a seat.
-      if (c.el.querySelectorAll('*').length > 6) continue;
       read.push({ x: c.x, y: c.y, rgb: paintOf(c.el) });
     }
     if (!read.length) return [];
