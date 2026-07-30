@@ -178,6 +178,11 @@ honoring `seats_together`, `min_row`, and physical-row normalization.
 Turn it on with `ENABLE_SEAT_VERIFICATION=true` in `backend/.env` (+ `playwright
 install chromium`).
 
+Server-side verification is **per-showtime and on demand**, not part of a search:
+each showtime means loading a chain listing plus a seat page in a real browser,
+measured at seconds each and serialized by the rate limiter, so verifying a batch
+adds minutes. Set `SEAT_VERIFICATION_ON_SEARCH=true` if you want it up front anyway.
+
 ### What works, per chain — and why
 
 Each chain was checked against its live seat page on **2026-07-29**. They differ
@@ -234,6 +239,12 @@ selectors from. It tries three independent strategies and reports which fired:
 | `interactive` | seat is a live control; taken seats are `disabled` | Regal-style listings |
 | `paint` | availability exists only visually | AMC (SVG gradient stop-colors) |
 
+A strategy that found **both** states beats one that returned a uniform answer.
+That matters because reporting taken seats as free is the worst error the tool can
+make, and `interactive` produces exactly that on a map where selection is JS-driven
+so no seat carries `disabled`. Genuinely all-free and sold-out auditoriums do exist,
+so it's a preference rather than a veto, and the choice is reported in `stats`.
+
 Rows come from **vertical overlap** of seat boxes, which is the one thing every seat
 map shares and gives physical screen-first order directly — exactly what `min_row`
 means. Aisles are detected from anomalous x-spacing so a run can't span one. For
@@ -245,12 +256,29 @@ Verified against AMC's live seat map: 190 seats, 9 rows, **45 available**, match
 screenshot of the same map — and the generic extractor agrees with the dedicated
 server-side one. Against Cinemark's real markup it reads the grid exactly.
 
+Because the handoff opens the app in a **new tab**, the last search is persisted to
+`localStorage` (2-hour expiry) and restored on load — otherwise the app would mount
+with no showtimes and there would be nothing to attach the verdict to.
+
 > **Why a bookmarklet and not a POST from the page?** Chrome's Private Network
 > Access blocks an https page from fetching `127.0.0.1` — measured on AMC's seat
 > page, where the request hung until aborted even with permissive CORS and
 > `Access-Control-Allow-Private-Network`. So the grid is handed over by *navigation*
 > (a URL fragment) with a clipboard copy as fallback, and the extractor is inlined
 > rather than loaded from localhost, for the same reason.
+
+### Re-verifying the whole flow
+
+`backend/scripts/e2e_browser_seatcheck.py` drives the entire chain against live
+pages — search, open a real seat page, run the real bookmarklet, follow the handoff
+into a new tab, apply the verdict to a showtime — with nothing stubbed but the final
+`window.open`. It sits outside `pytest` because it needs both servers up and touches
+a live chain site whose seat map changes as tickets sell.
+
+```bash
+cd backend && .venv/bin/python scripts/e2e_browser_seatcheck.py \
+    --seat-url https://www.amctheatres.com/showtimes/<id>/seats
+```
 
 ### How a showtime becomes a seat map
 
