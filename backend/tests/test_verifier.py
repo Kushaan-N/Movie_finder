@@ -181,7 +181,7 @@ def test_unresolvable_showtime_explains_itself(monkeypatch, cinemark_enabled):
     st = _showtime()
     verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
     assert verified == 0
-    assert "no matching showtime" in (st.seat_check.reason or "").lower()
+    assert "no showtime" in (st.seat_check.reason or "").lower()
 
 
 # --- amc: geometry strategy ------------------------------------------------- #

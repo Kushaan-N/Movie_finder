@@ -27,18 +27,59 @@ def test_supports_only_chains_with_reachable_seat_pages():
 
 def test_cinemark_candidates_extracts_seatmap_links():
     cands = resolver.cinemark_candidates(_fixture("cinemark_listing.html"))
-    assert len(cands) == 3
-    labels = [c[0] for c in cands]
-    assert "11:00pm" in labels
+    # Unscoped: every film on the page, including the second film's 11:00pm.
+    assert len(cands) == 4
+    assert "11:00pm" in [c[0] for c in cands]
     assert all(u.startswith("https://www.cinemark.com/TicketSeatMap/") for _, u in cands)
 
 
 def test_amc_candidates_appends_seats_to_showtime_links():
     cands = resolver.amc_candidates(_fixture("amc_listing.html"))
-    assert len(cands) == 3
+    # Unscoped: both films on the page.
+    assert len(cands) == 5
     urls = [u for _, u in cands]
     assert "https://www.amctheatres.com/showtimes/144251397/seats" in urls
     assert all(u.endswith("/seats") for u in urls)
+
+
+# --- scoping a showtime to its own film ------------------------------------- #
+
+def test_amc_candidates_scoped_to_one_film():
+    """Two films share the 7:00pm slot in the fixture, as they do live."""
+    cands = resolver.amc_candidates(_fixture("amc_listing.html"), movie_title="The Odyssey")
+    assert len(cands) == 3
+    assert "https://www.amctheatres.com/showtimes/144541318/seats" not in [u for _, u in cands]
+
+
+def test_amc_resolves_the_requested_film_not_whichever_shares_the_time():
+    """The live bug: a 7:00pm "The Odyssey" request resolved to Spider-Man's map."""
+    html = _fixture("amc_listing.html")
+    at_seven = datetime(2026, 8, 1, 19, 0)
+    odyssey = resolver.resolve_from_listing("amc", html, at_seven, movie_title="The Odyssey")
+    spidey = resolver.resolve_from_listing(
+        "amc", html, at_seven, movie_title="Spider-Man: Brand New Day"
+    )
+    assert odyssey.endswith("/showtimes/144251396/seats")
+    assert spidey.endswith("/showtimes/144541318/seats")
+    assert odyssey != spidey
+
+
+def test_cinemark_resolution_is_scoped_to_the_film_too():
+    html = _fixture("cinemark_listing.html")
+    at_eleven = datetime(2026, 8, 1, 23, 0)
+    odyssey = resolver.resolve_from_listing("cinemark", html, at_eleven, movie_title="The Odyssey")
+    spidey = resolver.resolve_from_listing(
+        "cinemark", html, at_eleven, movie_title="Spider-Man: Brand New Day"
+    )
+    assert "ShowtimeId=770106" in odyssey
+    assert "ShowtimeId=770201" in spidey
+
+
+def test_a_film_not_on_the_listing_resolves_to_nothing():
+    html = _fixture("amc_listing.html")
+    assert resolver.resolve_from_listing(
+        "amc", html, datetime(2026, 8, 1, 19, 0), movie_title="Moana"
+    ) is None
 
 
 def test_resolve_picks_the_matching_start_time():
