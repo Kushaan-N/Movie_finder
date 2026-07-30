@@ -26,8 +26,12 @@ auth later is additive, not a rewrite.
 - **Graceful data-source fallback**: SerpApi → MovieGlu → Playwright scraper → demo.
 - **Saved searches** with one-tap re-run and a **diff view** highlighting showtimes
   that are new since the last run.
-- Seat-check status badges: 🟢 match / 🟡 check manually / 🔴 no block — and it
+- Seat-check status badges: 🟢 match / 🟡 seats unknown / 🔴 no block — and it
   **never fabricates** a match when a seat map can't be parsed.
+- **Every showtime links somewhere real.** A provider's own link is a `google.com`
+  search page, so each card instead opens the chain's own page for that theatre and
+  date — where the ticket is actually sold — with a Fandango link alongside. See
+  "Where a showtime links to" below.
 - **Seat verification, two ways.** Server-side (Playwright) reads AMC's real seat map
   and upgrades "check manually" into a match/no-match with the physical row; Regal
   yields sold-out state only (CAPTCHA-gated seat page) and Cinemark none (robots.txt
@@ -165,6 +169,30 @@ implemented in
 
 Each falls back to the next when unavailable or empty. The scraper is rate-limited and
 respects `robots.txt`.
+
+---
+
+## Where a showtime links to
+
+A provider hands back a `google.com/search` URL, which is a search results page, not
+somewhere you can see the showtime. That made a "seats unknown" badge a dead end, so
+`backend/app/links.py` builds real destinations instead:
+
+| Tier | Destination | Cost |
+|---|---|---|
+| 1 | **The chain's own page for that theatre and date** — `Open at AMC` / `Cinemark` / `Regal` | none; deterministic from `chain_slug` |
+| 2 | **Fandango**, scoped to the movie | none |
+| 3 | The provider's original search link, kept under `links.search` | none |
+
+Each URL scheme was verified against the live site on 2026-07-29, including that
+Regal wants `MM-DD-YYYY` while AMC and Cinemark want ISO dates, and that the date
+parameter is genuinely honoured (Cinemark shows "Sat 8/1" selected). Each card links
+with **its own** date, so a Sat Aug 1 showtime opens Aug 1.
+
+Fandango is deliberately a *search* link: their deep links embed internal ids
+(`/the-odyssey-2026-241283/movie-overview`) that can't be derived, so linking
+"straight to" a showtime there would be a guess. The query is the movie **alone** —
+adding the theatre name makes their search return nothing at all.
 
 ---
 
