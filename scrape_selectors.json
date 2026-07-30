@@ -42,23 +42,10 @@
     },
     "amc": {
       "strategy": "geometry",
-      "verified": "2026-07-29 against /showtimes/<id>/seats at AMC Metreon 16. No login required, but the whole site sits behind a Queue-it waiting room (clears in ~15s). canvas: 0, svg: 198, and ZERO <text> elements \u2014 seat labels are SVG <path> glyph outlines, so labels are unreadable and CSS selectors match nothing. Seats are small <svg> boxes; clustering 196 of them by y produced 15 clean rows, and availability comes from the resolved gradient stop-colors below (45 available / 137 occupied, confirmed against a screenshot).",
+      "verified": "2026-07-30 against /showtimes/<id>/seats at AMC Metreon 16 and Eastridge 15. No login required, but the whole site sits behind a Queue-it waiting room, and it serves 403 for the SPA's JS chunks on a second navigation from one browser context -- so every page load needs a fresh context. canvas: 0, and ZERO <text> elements: seat labels are SVG <path> glyph outlines, so labels are unreadable and CSS selectors match nothing. Seats are small <svg> boxes recovered by geometry. Availability is read from the page's own LEGEND rather than a fixed palette, because AMC themes auditoriums differently -- a palette verified at Metreon reported 0 available at Eastridge.",
       "seat_min_px": 8,
       "seat_max_px": 80,
       "row_tolerance_px": 12,
-      "available_stop_colors": [
-        "#555aaa",
-        "#2a1f63"
-      ],
-      "occupied_stop_colors": [
-        "transparent"
-      ],
-      "ignore_stop_colors": [
-        "none",
-        "#fff",
-        "#ffffff",
-        "currentcolor"
-      ],
       "min_seats_expected": 20,
       "queue_url_substring": "queue.amctheatres.com",
       "queue_max_wait_sec": 45,
@@ -67,7 +54,7 @@
         "sign in to reserve"
       ],
       "seat_wait_max_sec": 35,
-      "note_render_race": "The seat SVGs paint AFTER load-state events settle, so extraction polls until at least min_seats_expected seats exist. Evaluating on 'networkidle' alone intermittently returned 0 seats, which is indistinguishable from 'markup changed'."
+      "note_extraction": "Extraction is app/scrape/seat_extract.js, shared with the bookmarklet. It reads state names from the legend, so no per-chain colour list is needed here."
     },
     "regal": {
       "strategy": "capacity",
