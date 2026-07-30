@@ -14,13 +14,15 @@ against live pages on 2026-07-29:
    showtime to the chain's own seat URL by reading the chain's showtimes listing
    (one listing load per theater/date, cached and shared across showtimes).
 
-2. **One parser could not cover the chains.** They differ fundamentally, so
-   extraction is per-chain by strategy (see scrape_selectors.json):
+2. **What each chain will give up differs**, so the route is per-chain by strategy
+   (see scrape_selectors.json). Extraction itself is now ONE implementation --
+   ``seat_extract.js`` via ``scrape.extract``, shared with the bookmarklet:
 
    * ``amc`` → ``geometry``: no seat attributes and no text at all (labels are
-     SVG glyph paths), so seats are recovered from layout geometry and resolved
-     gradient fills. See scrape.extract. This is the only chain that yields a
-     full seat map.
+     SVG glyph paths), so seats come from layout geometry, and which colour means
+     "free" is read from the page's own legend rather than a fixed palette --
+     AMC themes auditoriums differently, and a palette verified at one reported
+     zero available at another. This is the only chain that yields a full map.
    * ``regal`` → ``capacity``: its seat page is behind a Cloudflare CAPTCHA, so
      the exact map is unreachable. Its listing IS reachable and publishes
      sold-out state, which settles the seat question for the shows it marks —
