@@ -33,10 +33,21 @@ DEFAULT_RANGE_DAYS = 14
 # real provider is configured (see its .available()).
 _PROVIDERS = [SerpApiProvider, MovieGluProvider, ScraperProvider, DemoProvider]
 
-# Tiny in-process TTL cache for search responses, keyed on the request. Conserves
-# the SerpApi free-tier quota and speeds repeat searches. Fine for single-process
-# v1; swap for Redis when scaling to multiple workers.
+# Two TTL caches, because the request has two very different halves.
+#
+# _search_cache holds finished responses, keyed on the whole request.
+#
+# _provider_cache holds the rows a provider returned, keyed ONLY on what the fetch
+# actually depends on: movie, location, radius and date range. Seat requirements,
+# the time window and the format filter are applied locally afterwards, so nudging
+# "minimum row" used to miss the response cache and re-fetch everything -- one
+# SerpApi request per in-range theatre and several seconds, for a change that cannot
+# alter what the provider returns. Those tweaks are exactly the interactive loop, so
+# they now cost nothing.
+#
+# Fine for single-process v1; swap for Redis when scaling to multiple workers.
 _search_cache: dict[str, tuple[float, SearchResponse]] = {}
+_provider_cache: dict[str, tuple[float, list[ProviderShowtime], str]] = {}
 
 
 def _requested_formats(req: SearchRequest) -> list[str]:
@@ -65,8 +76,20 @@ def _cache_key(req: SearchRequest, start: date, end: date) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
+def _provider_cache_key(req: SearchRequest, start: date, end: date) -> str:
+    """Keyed on the inputs to the provider fetch, and nothing else."""
+    raw = "|".join(
+        str(x) for x in (
+            req.movie_title.strip().lower(), req.location.strip().lower(),
+            req.radius_miles, start, end,
+        )
+    )
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
 def clear_search_cache() -> None:
     _search_cache.clear()
+    _provider_cache.clear()
 
 
 def _apply_date_defaults(req: SearchRequest) -> tuple[date, date]:
@@ -164,7 +187,15 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
     provider_used = "none"
     raw: list[ProviderShowtime] = []
-    for provider_cls in _PROVIDERS:
+
+    # Reuse a recent fetch for the same movie/location/radius/dates, whatever the
+    # local filters are set to.
+    pkey = _provider_cache_key(req, start, end)
+    phit = _provider_cache.get(pkey) if (use_cache and ttl > 0) else None
+    if phit and (_time.time() - phit[0]) < ttl:
+        raw, provider_used = list(phit[1]), phit[2]
+
+    for provider_cls in [] if raw else _PROVIDERS:
         provider = provider_cls()
         if not provider.available():
             continue
@@ -176,6 +207,9 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
             continue
         provider_used = provider.name
         if raw:
+            # Only cache a real, non-empty fetch: an empty one is often transient.
+            if use_cache and ttl > 0:
+                _provider_cache[pkey] = (_time.time(), list(raw), provider_used)
             break
         notes.append(f"Provider {provider.name} returned no rows; falling back.")
 
