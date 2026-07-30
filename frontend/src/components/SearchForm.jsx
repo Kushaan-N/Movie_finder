@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Search, MapPin, Calendar, Clock, Users, Film, Sparkles } from "lucide-react";
-import { Card, Button, Input, Select, Label, Stepper, Switch } from "@/components/ui/primitives";
+import { Card, Button, Input, Label, Stepper, Switch } from "@/components/ui/primitives";
 
 const MOVIE_SUGGESTIONS = [
   "Dune: Part Two",
@@ -16,6 +16,19 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
 
   const set = (patch) => onChange({ ...value, ...patch });
   const setRule = (patch) => onChange({ ...value, time_rule: { ...value.time_rule, ...patch } });
+  const selectedFormats = value.formats?.length ? value.formats : [value.format || "Any"];
+  const toggleFormat = (format) => {
+    if (format === "Any") {
+      set({ formats: ["Any"], format: "Any" });
+      return;
+    }
+    const withoutAny = selectedFormats.filter((item) => item !== "Any");
+    const next = withoutAny.includes(format)
+      ? withoutAny.filter((item) => item !== format)
+      : [...withoutAny, format];
+    const formatsNext = next.length ? next : ["Any"];
+    set({ formats: formatsNext, format: formatsNext.length === 1 ? formatsNext[0] : "Any" });
+  };
 
   return (
     <Card className="p-5 sm:p-6">
@@ -26,38 +39,60 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
         }}
         className="space-y-5"
       >
-        {/* Movie + format */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label hint="required">
-              <Film className="h-4 w-4 text-primary" /> Movie title
-            </Label>
-            <Input
-              list="movie-suggestions"
-              placeholder="e.g. Dune: Part Two"
-              value={value.movie_title}
-              onChange={(e) => set({ movie_title: e.target.value })}
-              required
-            />
-            <datalist id="movie-suggestions">
-              {MOVIE_SUGGESTIONS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <Label>
-              <Sparkles className="h-4 w-4 text-primary" /> Format
-            </Label>
-            <Select value={value.format} onChange={(e) => set({ format: e.target.value })}>
-              {(formats || ["Any", "IMAX", "Dolby", "Standard"]).map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </Select>
-          </div>
+        {/* Movie */}
+        <div>
+          <Label hint="required">
+            <Film className="h-4 w-4 text-primary" /> Movie title
+          </Label>
+          <Input
+            list="movie-suggestions"
+            placeholder="e.g. Dune: Part Two"
+            value={value.movie_title}
+            onChange={(e) => set({ movie_title: e.target.value })}
+            required
+          />
+          <datalist id="movie-suggestions">
+            {MOVIE_SUGGESTIONS.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
         </div>
+
+        {/* Formats */}
+        <fieldset className="rounded-lg border border-border/60 bg-background/40 p-4">
+          <legend className="px-1 text-sm font-semibold">
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> Formats
+            </span>
+          </legend>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Select one or more. Results can match any checked format.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {(formats || ["Any", "IMAX", "Dolby", "70mm IMAX", "Standard"]).map((format) => {
+              const checked = selectedFormats.includes(format);
+              return (
+                <label
+                  key={format}
+                  className={
+                    "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors " +
+                    (checked
+                      ? "border-primary/50 bg-primary/10 text-foreground"
+                      : "border-border/60 bg-background/30 text-muted-foreground hover:bg-muted/50")
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleFormat(format)}
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  {format}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
 
         {/* Location + radius */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
