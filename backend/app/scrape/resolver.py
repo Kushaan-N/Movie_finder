@@ -26,7 +26,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from ..titles import slug_matches_title
 
@@ -191,6 +191,53 @@ def find_sold_out(chain: str, html: str, movie_title: str, start: datetime) -> O
         if hm and _minutes_apart(hm, start) <= _TIME_TOLERANCE_MIN:
             return sold
     return None
+
+
+# Host -> chain. Used to attribute a grid the user read in their own browser, so
+# the result isn't filed under "unknown" and per-theater row overrides can apply.
+_HOSTS = {
+    "amctheatres.com": "amc",
+    "regmovies.com": "regal",
+    "cinemark.com": "cinemark",
+}
+
+
+def chain_from_url(url: Optional[str]) -> Optional[str]:
+    """Infer the chain from a seat-page URL."""
+    if not url:
+        return None
+    host = (urlparse(url).netloc or "").lower()
+    for domain, chain in _HOSTS.items():
+        if host == domain or host.endswith("." + domain):
+            return chain
+    return None
+
+
+def theater_from_url(url: Optional[str], theaters) -> Optional[str]:
+    """Match a seat-page URL to a theaters.json id via its chain_slug.
+
+    A seat URL doesn't always carry the theatre slug (AMC's is just
+    ``/showtimes/<id>/seats``), so this returns None rather than guessing when the
+    path has nothing to match on.
+    """
+    if not url:
+        return None
+    chain = chain_from_url(url)
+    path = (urlparse(url).path or "").lower()
+    query = (urlparse(url).query or "").lower()
+    best = None
+    for t in theaters:
+        if chain and t.chain != chain:
+            continue
+        slug = (t.chain_slug or "").lower()
+        if not slug:
+            continue
+        # Match the most specific segment of the slug that appears in the URL.
+        tail = slug.rsplit("/", 1)[-1]
+        if tail and (tail in path or tail in query):
+            if best is None or len(tail) > len(best[1]):
+                best = (t.id, tail)
+    return best[0] if best else None
 
 
 def listing_url(chain: str, theater_slug: str, day: datetime) -> Optional[str]:
