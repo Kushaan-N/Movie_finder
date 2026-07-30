@@ -71,8 +71,17 @@ def _best_match(candidates: list[tuple[str, str]], target: datetime) -> Optional
 
 # --- per-chain listing parsers (pure functions over HTML, unit-testable) ---- #
 
-def cinemark_candidates(html: str, base: str = "https://www.cinemark.com") -> list[tuple[str, str]]:
-    """Extract (time_label, seat_url) pairs from a Cinemark theatre page."""
+def cinemark_candidates(
+    html: str,
+    base: str = "https://www.cinemark.com",
+    movie_title: Optional[str] = None,
+) -> list[tuple[str, str]]:
+    """Extract (time_label, seat_url) pairs from a Cinemark theatre page.
+
+    Scoped to one film when ``movie_title`` is given, for the same reason as AMC: a
+    theatre page lists every film playing that day, and several screen at the same
+    minute.
+    """
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html or "", "html.parser")
@@ -80,16 +89,47 @@ def cinemark_candidates(html: str, base: str = "https://www.cinemark.com") -> li
     for a in soup.select('a[href*="TicketSeatMap"]'):
         label = a.get_text(" ", strip=True)
         href = a.get("href")
-        if label and href:
-            out.append((label, urljoin(base, href)))
+        if not (label and href):
+            continue
+        if movie_title:
+            slug = _movie_slug_for(a)
+            if not slug or not slug_matches_title(movie_title, slug):
+                continue
+        out.append((label, urljoin(base, href)))
     return out
 
 
-def amc_candidates(html: str, base: str = "https://www.amctheatres.com") -> list[tuple[str, str]]:
+def _movie_slug_for(node) -> Optional[str]:
+    """The film a showtime link belongs to, from its nearest movie-link ancestor.
+
+    Chain listings carry every film playing that day, so a showtime has to be
+    attributed to its own film. Both AMC and Regal wrap a film's showtimes in a
+    container holding a ``/movies/<slug>`` link, and that link is stable where the
+    CSS classes are generated hashes.
+    """
+    for parent in node.parents:
+        if not hasattr(parent, "find"):
+            continue
+        link = parent.find("a", href=lambda h: h and "/movies/" in h)
+        if link:
+            return link["href"].rstrip("/").rsplit("/", 1)[-1]
+    return None
+
+
+def amc_candidates(
+    html: str,
+    base: str = "https://www.amctheatres.com",
+    movie_title: Optional[str] = None,
+) -> list[tuple[str, str]]:
     """Extract (time_label, seat_url) pairs from an AMC showtimes page.
 
     AMC links a showing to ``/showtimes/<numeric id>``; the seat map is that URL
     with ``/seats`` appended.
+
+    When ``movie_title`` is given, only that film's showtimes are returned. Without
+    it, matching on time alone silently picked whichever film happened to screen at
+    the same minute — observed live, where a 6:00 PM "The Odyssey" request resolved
+    to Spider-Man's seat map and reported its availability as the answer.
     """
     from bs4 import BeautifulSoup
 
@@ -102,6 +142,10 @@ def amc_candidates(html: str, base: str = "https://www.amctheatres.com") -> list
         label = a.get_text(" ", strip=True)
         if not label:
             continue
+        if movie_title:
+            slug = _movie_slug_for(a)
+            if not slug or not slug_matches_title(movie_title, slug):
+                continue
         seat_url = urljoin(base, href.rstrip("/") + "/seats")
         out.append((label, seat_url))
     return out
@@ -246,16 +290,27 @@ def listing_url(chain: str, theater_slug: str, day: datetime) -> Optional[str]:
 
 
 def resolve_from_listing(
-    chain: str, html: str, start: datetime, base: Optional[str] = None
+    chain: str,
+    html: str,
+    start: datetime,
+    base: Optional[str] = None,
+    movie_title: Optional[str] = None,
 ) -> Optional[str]:
     """Find the seat URL for ``start`` in a chain listing page's HTML.
 
     ``base`` is the URL the listing was fetched from; relative hrefs resolve
     against it, so this works unchanged when the host is swapped (E2E tests point
     it at a local fixture server).
+
+    ``movie_title`` scopes the search to one film. Omitting it means matching on
+    time alone, which resolves to whichever film shares the minute.
     """
     parser = _PARSERS.get((chain or "").lower())
     if not parser:
         return None
-    candidates = parser(html, base) if base else parser(html)
-    return _best_match(candidates, start)
+    kwargs = {}
+    if base:
+        kwargs["base"] = base
+    if movie_title:
+        kwargs["movie_title"] = movie_title
+    return _best_match(parser(html, **kwargs), start)
