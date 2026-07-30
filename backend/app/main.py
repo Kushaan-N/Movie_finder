@@ -106,7 +106,7 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
     """Verify one showtime's seats on demand (renders the booking page + parses)."""
     from .rows import normalize_row
     from .scrape.seatmap import _chain_cfg
-    from .scrape.verifier import SeatVerifier, verifiable_chains
+    from .scrape.verifier import SeatVerifier, _unavailable_reason, verifiable_chains
 
     def _cannot(reason: str, available: bool) -> VerifySeatsResponse:
         return VerifySeatsResponse(
@@ -126,13 +126,14 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
     if req.chain not in verifiable_chains():
         cfg = _chain_cfg(req.chain) or {}
         return _cannot(
-            cfg.get("blocked_reason")
+            _unavailable_reason(cfg)
             or f"No seat-map parser configured for chain '{req.chain}'.",
             True,
         )
 
     check, result = await verifier.verify_showtime(
-        req.chain, req.theater_id, req.start_datetime, req.seats_together, req.min_row
+        req.chain, req.theater_id, req.start_datetime, req.seats_together, req.min_row,
+        movie_title=req.movie_title or "",
     )
     grid: list[SeatGridRow] = []
     if result.ok:
