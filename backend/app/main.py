@@ -83,7 +83,7 @@ def health() -> dict:
 @app.get("/api/config")
 def config() -> dict:
     """Surface editable options to the UI (formats, chains, theaters)."""
-    from .scrape.verifier import SUPPORTED_CHAINS
+    from .scrape.verifier import verifiable_chains
 
     theaters = theaters_service.load_theaters()
     preferred_formats = ["IMAX", "Dolby", "70mm IMAX", "70mm", "4DX", "ScreenX", "XD", "Standard"]
@@ -97,7 +97,7 @@ def config() -> dict:
         ],
         "provider_available": settings.has_serpapi or settings.has_movieglu or settings.enable_scraper_fallback,
         "seat_verification": settings.enable_seat_verification and _playwright_installed(),
-        "verify_chains": sorted(SUPPORTED_CHAINS),
+        "verify_chains": sorted(verifiable_chains()),
     }
 
 
@@ -105,7 +105,8 @@ def config() -> dict:
 async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
     """Verify one showtime's seats on demand (renders the booking page + parses)."""
     from .rows import normalize_row
-    from .scrape.verifier import SUPPORTED_CHAINS, SeatVerifier
+    from .scrape.seatmap import _chain_cfg
+    from .scrape.verifier import SeatVerifier, verifiable_chains
 
     def _cannot(reason: str, available: bool) -> VerifySeatsResponse:
         return VerifySeatsResponse(
@@ -122,11 +123,16 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
     verifier = SeatVerifier()
     if not verifier.available():
         return _cannot("Seat verification is not enabled on the server (ENABLE_SEAT_VERIFICATION).", False)
-    if req.chain not in SUPPORTED_CHAINS:
-        return _cannot(f"No seat-map parser configured for chain '{req.chain}'.", True)
+    if req.chain not in verifiable_chains():
+        cfg = _chain_cfg(req.chain) or {}
+        return _cannot(
+            cfg.get("blocked_reason")
+            or f"No seat-map parser configured for chain '{req.chain}'.",
+            True,
+        )
 
-    check, result = await verifier.verify_url(
-        req.chain, req.booking_url, req.seats_together, req.min_row, req.theater_id
+    check, result = await verifier.verify_showtime(
+        req.chain, req.theater_id, req.start_datetime, req.seats_together, req.min_row
     )
     grid: list[SeatGridRow] = []
     if result.ok:
