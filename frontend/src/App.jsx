@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Clapperboard, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { defaultSearch } from "@/lib/defaults";
+import { loadLastSearch, saveLastSearch } from "@/lib/lastSearch";
 import SearchForm from "@/components/SearchForm";
 import Results from "@/components/Results";
 import SavedSearches from "@/components/SavedSearches";
@@ -32,6 +33,13 @@ export default function App() {
       })
       .catch(() => {});
     refreshSaved();
+    // Restore the last search so a grid handed over by the bookmarklet -- which
+    // arrives in a new tab -- still has showtimes to be attached to.
+    const last = loadLastSearch();
+    if (last) {
+      setForm(last.form);
+      setResult(last.result);
+    }
   }, []);
 
   const refreshSaved = () => api.listSaved().then(setSaved).catch(() => {});
@@ -61,7 +69,9 @@ export default function App() {
     setLoading(true);
     setActiveSavedId(null);
     try {
-      setResult(await api.search(form));
+      const res = await api.search(form);
+      setResult(res);
+      saveLastSearch(form, res);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -86,6 +96,7 @@ export default function App() {
     try {
       const res = await api.runSaved(id);
       setResult(res);
+      saveLastSearch(form, res);
       await refreshSaved();
       flash(res.new_count > 0 ? `${res.new_count} new showtime(s) since last run` : "Re-ran — no new showtimes");
     } catch (e) {
