@@ -86,7 +86,9 @@ def config() -> dict:
     from .scrape.verifier import SUPPORTED_CHAINS
 
     theaters = theaters_service.load_theaters()
-    formats = sorted({f for t in theaters for f in t.formats} | {"IMAX", "Dolby", "Standard", "XD", "ScreenX"})
+    preferred_formats = ["IMAX", "Dolby", "70mm IMAX", "70mm", "4DX", "ScreenX", "XD", "Standard"]
+    available_formats = {f for t in theaters for f in t.formats}
+    formats = preferred_formats + sorted(available_formats - set(preferred_formats))
     return {
         "formats": ["Any", *formats],
         "theaters": [
