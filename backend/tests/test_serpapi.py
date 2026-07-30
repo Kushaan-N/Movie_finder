@@ -237,3 +237,18 @@ def test_format_matches_any_ors_the_selection():
     assert format_matches_any("Dolby", ["IMAX", "Dolby"])
     assert not format_matches_any("XD", ["IMAX", "Dolby"])
     assert format_matches_any("XD", [])  # empty selection == Any
+
+
+def test_slug_matching_handles_punctuation_and_chain_ids():
+    """URL slugs drop punctuation and append a chain id, so titles need looser
+    matching there than against a displayed title."""
+    from app.titles import slug_matches_title
+
+    # "Spider-Man" becomes "spiderman", so token matching alone fails.
+    assert slug_matches_title("Spider-Man: Brand New Day", "spiderman-brand-new-day-ho000212")
+    # Trailing chain id must not defeat the match.
+    assert slug_matches_title("The Odyssey", "the-odyssey-ho00019072")
+    assert slug_matches_title("Odyssey", "the-odyssey-ho00019072")
+    assert not slug_matches_title("Moana", "the-odyssey-ho00019072")
+    # Very short titles fall back to token matching so they don't match everything.
+    assert not slug_matches_title("M", "the-odyssey-ho00019072")
