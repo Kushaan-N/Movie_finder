@@ -331,8 +331,17 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
                 f"{req.radius_miles:g}-mile radius."
             )
 
-    # Stable ordering: theater name, then datetime.
-    showtimes.sort(key=lambda s: (s.theater_name.lower(), s.start_datetime))
+    # Nearest theater first, then chronologically within it. The UI groups by
+    # theater, so this ordering is what the user actually scans; alphabetical put a
+    # 22-mile theater above one 0.9 miles away. Theaters with no known distance sort
+    # last rather than first, so an unknown never outranks a measured one.
+    showtimes.sort(
+        key=lambda s: (
+            s.distance_miles if s.distance_miles is not None else float("inf"),
+            s.theater_name.lower(),
+            s.start_datetime,
+        )
+    )
 
     # Optional seat verification (Playwright): upgrade "check manually" badges for
     # real-provider results only — never scrape synthetic demo booking URLs.
