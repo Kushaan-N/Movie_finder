@@ -235,7 +235,7 @@ class SeatVerifier:
                 want = int(cfg.get("min_seats_expected") or 1)
                 deadline = time.time() + float(cfg.get("seat_wait_max_sec") or 20)
                 while True:
-                    data = await page.evaluate(call_expression(json.dumps(cfg)))
+                    data = await page.evaluate(call_expression(cfg))
                     found = int(((data or {}).get("stats") or {}).get("seats_found") or 0)
                     if found >= want or time.time() >= deadline:
                         break

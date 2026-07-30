@@ -19,6 +19,7 @@ This module owns the Python side: loading that JS and turning its payload into a
 """
 from __future__ import annotations
 
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -38,9 +39,40 @@ def extractor_js() -> str:
     return _JS_PATH.read_text(encoding="utf-8").strip()
 
 
-def call_expression(options_json: str = "{}") -> str:
-    """A ``page.evaluate``-ready expression that runs the extractor."""
-    return f"({extractor_js()})({options_json})"
+# scrape_selectors.json is snake_case; the extractor's options are camelCase. They
+# were being passed straight through, so NONE of the tuning config reached it and it
+# silently used its own defaults -- harmless only because those happen to match the
+# verified values, but it meant editing the config did nothing.
+_OPTION_NAMES = {
+    "seat_min_px": "seatMinPx",
+    "seat_max_px": "seatMaxPx",
+    "row_tolerance_px": "rowTolerancePx",
+    "aisle_gap_factor": "aisleGapFactor",
+    "min_seats_expected": "minSeats",
+    "min_rows_expected": "minRows",
+    "min_row_width": "minRowWidth",
+    "available_colors": "availableColors",
+    "max_scan": "maxScan",
+    "max_candidates": "maxCandidates",
+}
+
+
+def extractor_options(cfg: dict) -> dict:
+    """Translate a chain's config into the extractor's option names."""
+    return {
+        js: cfg[key] for key, js in _OPTION_NAMES.items()
+        if cfg.get(key) is not None
+    }
+
+
+def call_expression(options: dict | str = "{}") -> str:
+    """A ``page.evaluate``-ready expression that runs the extractor.
+
+    Accepts a chain config dict (translated for you) or a pre-built JSON string.
+    """
+    if isinstance(options, dict):
+        options = json.dumps(extractor_options(options))
+    return f"({extractor_js()})({options})"
 
 
 def rows_from_payload(
