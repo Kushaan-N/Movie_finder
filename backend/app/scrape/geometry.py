@@ -161,8 +161,17 @@ def rows_from_extraction(
             return SeatMapParseResult(
                 None, reason="Seat map rendered to <canvas> (not parseable)", stats=stats
             )
+        # Zero seats after the render poll usually means we never reached the map
+        # (a queue/interstitial, or it simply hadn't drawn) rather than a markup
+        # change. Saying "structure changed" for that sent people looking for a bug
+        # that wasn't there.
         return SeatMapParseResult(
-            None, reason="No seat elements found (page structure changed or blocked)", stats=stats
+            None,
+            reason=(
+                "The seat map didn't load in time — the chain's site was slow or "
+                "showed a waiting room. Try again, or open the seat page directly."
+            ),
+            stats=stats,
         )
 
     # Only the known seat palette is treated as a seat, so a moved palette shows
