@@ -184,13 +184,28 @@ class SeatVerifier:
 
             # AMC fronts the whole site with a Queue-it waiting room; it clears on
             # its own, so wait it out rather than trying to route around it.
+            #
+            # The redirect into the queue does not always land before
+            # domcontentloaded, so checking once here missed it: we then polled a
+            # queue page for seats, found none, and reported "page structure changed"
+            # for what was really "we never got to the map". Observed live. The
+            # check therefore re-runs until the URL settles off the queue.
             queue_sub = cfg.get("queue_url_substring")
-            if queue_sub and queue_sub in page.url:
+            if queue_sub:
                 deadline = time.time() + float(cfg.get("queue_max_wait_sec") or 45)
-                while queue_sub in page.url and time.time() < deadline:
-                    await page.wait_for_timeout(2000)
+                while time.time() < deadline:
+                    if queue_sub in page.url:
+                        await page.wait_for_timeout(2000)
+                        continue
+                    # Off the queue — give a late redirect a moment to appear.
+                    await page.wait_for_timeout(1000)
+                    if queue_sub not in page.url:
+                        break
                 if queue_sub in page.url:
-                    return None, None, "Chain queue/waiting room did not clear in time"
+                    return None, None, (
+                        "The chain's queue/waiting room did not clear in time — "
+                        "it is under load; try again shortly"
+                    )
 
             # Let the SPA settle, and wait out skeleton placeholders if configured.
             try:
