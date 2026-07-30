@@ -231,7 +231,21 @@ def verify_seats_from_grid(req: GridSeatCheckRequest) -> VerifySeatsResponse:
     """
     from .providers.base import SeatMapRow
     from .rows import normalize_row
+    from .scrape.resolver import chain_from_url, theater_from_url
     from .services.seatcheck import evaluate_rows
+
+    # Attribute the grid from its own URL rather than trusting the page to say.
+    # Without labels the physical row is the screen-first index either way, but a
+    # known chain/theater lets per-theater row overrides apply and shows the user
+    # what the result is filed against.
+    chain = req.chain if req.chain not in ("", "unknown", None) else None
+    chain = chain or chain_from_url(req.source_url) or "unknown"
+    theater_id = req.theater_id if req.theater_id not in ("", "single", None) else None
+    theater_id = (
+        theater_id
+        or theater_from_url(req.source_url, theaters_service.load_theaters())
+        or "single"
+    )
 
     rows: list[SeatMapRow] = []
     for line in req.rows:
@@ -243,11 +257,11 @@ def verify_seats_from_grid(req: GridSeatCheckRequest) -> VerifySeatsResponse:
     if not rows:
         raise HTTPException(status_code=400, detail="No seat rows in payload")
 
-    check = evaluate_rows(rows, req.chain, req.theater_id, req.seats_together, req.min_row)
+    check = evaluate_rows(rows, chain, theater_id, req.seats_together, req.min_row)
     grid = [
         SeatGridRow(
             physical_row=normalize_row(
-                req.chain, None, dom_order_index=idx, theater_id=req.theater_id
+                chain, None, dom_order_index=idx, theater_id=theater_id
             ).physical_row,
             raw_label=None,
             seats_available=row.seats_available,
@@ -266,6 +280,8 @@ def verify_seats_from_grid(req: GridSeatCheckRequest) -> VerifySeatsResponse:
             "strategy": req.strategy,
             "source": "browser",
             "source_url": req.source_url,
+            "chain": chain,
+            "theater_id": theater_id,
         },
     )
 
