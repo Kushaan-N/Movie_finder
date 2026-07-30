@@ -248,3 +248,53 @@ def test_a_wider_radius_refetches(monkeypatch, configure_provider):
     after_narrow = len(calls)
     asyncio.run(run_search(SearchRequest(**base, radius_miles=100)))
     assert len(calls) > after_narrow
+
+
+def test_results_are_ordered_nearest_theater_first(monkeypatch):
+    """The UI groups by theater, so this ordering is what the user scans."""
+    clear_search_cache()
+    from app.providers.base import ProviderShowtime
+
+    async def fake_fetch(self, query):
+        return [
+            ProviderShowtime(theater_name="AAA Far Cinema", movie_title="M", format="IMAX",
+                             start_datetime=datetime(2026, 8, 1, 20, 0), distance_miles=22.1),
+            ProviderShowtime(theater_name="ZZZ Near Cinema", movie_title="M", format="IMAX",
+                             start_datetime=datetime(2026, 8, 1, 19, 0), distance_miles=0.9),
+            ProviderShowtime(theater_name="MMM Unknown Cinema", movie_title="M", format="IMAX",
+                             start_datetime=datetime(2026, 8, 1, 18, 0)),
+        ]
+
+    monkeypatch.setattr(search_mod.DemoProvider, "fetch", fake_fetch)
+    res = asyncio.run(run_search(
+        SearchRequest(movie_title="M", location="94103", radius_miles=100, min_row=1,
+                      date_from="2026-08-01", date_to="2026-08-01",
+                      time_rule={"weekday_cutoff": "00:00", "weekends_unrestricted": True}),
+        use_cache=False,
+    ))
+    order = [s.theater_name for s in res.showtimes]
+    assert order[0] == "ZZZ Near Cinema", "nearest theater must come first"
+    assert order[1] == "AAA Far Cinema"
+    # An unknown distance sorts last rather than outranking a measured one.
+    assert order[-1] == "MMM Unknown Cinema"
+
+
+def test_showtimes_stay_chronological_within_a_theater(monkeypatch):
+    clear_search_cache()
+    from app.providers.base import ProviderShowtime
+
+    async def fake_fetch(self, query):
+        return [
+            ProviderShowtime(theater_name="One Cinema", movie_title="M", format="IMAX",
+                             start_datetime=datetime(2026, 8, 1, h, 0), distance_miles=2.0)
+            for h in (21, 18, 20)
+        ]
+
+    monkeypatch.setattr(search_mod.DemoProvider, "fetch", fake_fetch)
+    res = asyncio.run(run_search(
+        SearchRequest(movie_title="M", location="94103", min_row=1,
+                      date_from="2026-08-01", date_to="2026-08-01",
+                      time_rule={"weekday_cutoff": "00:00", "weekends_unrestricted": True}),
+        use_cache=False,
+    ))
+    assert [s.start_datetime.hour for s in res.showtimes] == [18, 20, 21]
