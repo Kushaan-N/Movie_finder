@@ -1,7 +1,13 @@
-"""Real end-to-end test: actual Chromium renders locally-served seat pages, the
-verifier parses them, and enrichment upgrades the badges. Only the target host is
-swapped (localhost fixtures instead of a chain's site) — every other moving part
-is real. Skipped automatically if Playwright/Chromium isn't installed.
+"""Real end-to-end enrichment: actual Chromium renders locally-served pages, the
+verifier resolves seat URLs from a listing, parses the maps, and upgrades badges.
+
+Only the listing host is swapped (localhost fixtures instead of a chain's site) —
+resolution, rendering, extraction, row normalization and the seat check are all
+real. Skipped automatically if Playwright/Chromium isn't installed.
+
+This deliberately covers both working strategies at once plus the blocked chain,
+because they fail in different ways: Cinemark parses attributes, AMC recovers
+seats from SVG geometry, and Regal cannot be verified at all.
 """
 import asyncio
 import importlib.util
@@ -11,55 +17,96 @@ import pytest
 
 from app.config import get_settings
 from app.schemas import SeatCheck, Showtime
+from app.scrape import resolver
 from app.scrape.verifier import SeatVerifier
 from tests._fixture_server import serve_fixtures
 
 _HAS_PW = importlib.util.find_spec("playwright") is not None
 
+# Both listing fixtures expose an 11:00pm showing.
+START = datetime(2026, 8, 1, 23, 0)
+NO_SUCH_START = datetime(2026, 8, 1, 4, 5)  # nothing in the listings is near this
 
-def _st(key, chain, url):
+_LISTING_PATH = {"cinemark": "/cinemark-listing", "amc": "/amc-listing"}
+
+
+def _st(key, chain, theater_id, start=START):
     return Showtime(
         key=key,
-        theater_id=f"{chain}-test",
+        theater_id=theater_id,
         theater_name=f"{chain.upper()} Test",
         chain=chain,
-        movie_title="Dune",
+        movie_title="The Odyssey",
         format="IMAX",
-        start_datetime=datetime(2026, 7, 28, 19, 15),
-        start_time_label="7:15 PM",
-        booking_url=url,
+        start_datetime=start,
+        start_time_label="11:00 PM",
+        # Providers only ever give a google.com link; it must be irrelevant now.
+        booking_url="https://www.google.com/search?q=irrelevant",
         seat_check=SeatCheck(status="check_manually", seats_together_requested=4, min_row_requested=5),
     )
 
 
 @pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
-def test_real_browser_enrichment_all_chains(monkeypatch):
+def test_real_browser_enrichment_across_strategies(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "enable_seat_verification", True, raising=False)
     monkeypatch.setattr(s, "scrape_rate_limit_per_sec", 50, raising=False)  # keep the test fast
 
     with serve_fixtures() as base:
+        monkeypatch.setattr(
+            resolver, "listing_url",
+            lambda chain, slug, day: (
+                f"{base}{_LISTING_PATH[chain]}" if chain in _LISTING_PATH else None
+            ),
+        )
         showtimes = [
-            _st("amc", "amc", f"{base}/amc"),
-            _st("regal", "regal", f"{base}/regal"),
-            _st("cinemark", "cinemark", f"{base}/cinemark"),
-            _st("miss", "amc", f"{base}/nope"),  # 404 -> no seat map -> stays check_manually
+            _st("cinemark", "cinemark", "cinemark-century-20-oakridge"),
+            _st("amc", "amc", "amc-metreon-16"),
+            _st("regal", "regal", "regal-hacienda-crossings"),
+            _st("miss", "cinemark", "cinemark-century-20-oakridge", start=NO_SUCH_START),
         ]
         verifier = SeatVerifier()
         assert verifier.available(), "seat verification should be available with Playwright installed"
 
-        verified, _notes = asyncio.run(verifier.enrich(showtimes, seats_together=4, min_row=5))
+        verified, notes = asyncio.run(verifier.enrich(showtimes, seats_together=4, min_row=1))
 
-    assert verified == 3
+    assert verified == 2  # cinemark + amc; regal is impossible, "miss" unresolvable
     by_key = {st.key: st for st in showtimes}
-    # AMC: qualifying block at physical row 8.
-    assert by_key["amc"].seat_check.status == "match"
-    assert by_key["amc"].seat_check.best_block_row.physical_row == 8
-    # Regal: physical row 6.
-    assert by_key["regal"].seat_check.status == "match"
-    assert by_key["regal"].seat_check.best_block_row.physical_row == 6
-    # Cinemark: physical row 7.
+
+    # Cinemark (dom strategy): run of 5 in row C = physical row 3.
     assert by_key["cinemark"].seat_check.status == "match"
-    assert by_key["cinemark"].seat_check.best_block_row.physical_row == 7
-    # The 404 URL never fabricates a match.
+    assert by_key["cinemark"].seat_check.best_block_row.physical_row == 3
+    assert by_key["cinemark"].seat_check.best_block_size == 5
+
+    # AMC (geometry strategy): run of 4 in the last of 3 rows.
+    assert by_key["amc"].seat_check.status == "match"
+    assert by_key["amc"].seat_check.best_block_row.physical_row == 3
+    assert by_key["amc"].seat_check.best_block_size == 4
+
+    # Regal: never verified, and the reason is surfaced rather than swallowed.
+    assert by_key["regal"].seat_check.status == "check_manually"
+    assert any("captcha" in n.lower() for n in notes)
+
+    # A showtime absent from the listing never fabricates a match.
     assert by_key["miss"].seat_check.status == "check_manually"
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_real_browser_honors_min_row(monkeypatch):
+    """The whole point of the feature: a physical-row floor actually filters."""
+    s = get_settings()
+    monkeypatch.setattr(s, "enable_seat_verification", True, raising=False)
+    monkeypatch.setattr(s, "scrape_rate_limit_per_sec", 50, raising=False)
+
+    with serve_fixtures() as base:
+        monkeypatch.setattr(
+            resolver, "listing_url", lambda chain, slug, day: f"{base}{_LISTING_PATH[chain]}"
+        )
+        sts = [
+            _st("cinemark", "cinemark", "cinemark-century-20-oakridge"),
+            _st("amc", "amc", "amc-metreon-16"),
+        ]
+        asyncio.run(SeatVerifier().enrich(sts, seats_together=4, min_row=4))
+
+    # Both maps' only qualifying blocks sit at physical row 3.
+    assert all(st.seat_check.status == "no_match" for st in sts)
