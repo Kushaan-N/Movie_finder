@@ -20,7 +20,8 @@ def _fixture(name: str) -> str:
 def test_supports_only_chains_with_reachable_seat_pages():
     assert resolver.supports("cinemark")
     assert resolver.supports("amc")
-    # Regal's seat page is CAPTCHA-gated, so there is nothing to resolve to.
+    # Regal's seat page is CAPTCHA-gated, so there is no seat URL to resolve to --
+    # only its listing (used for sold-out state) is reachable.
     assert not resolver.supports("regal")
 
 
@@ -73,4 +74,41 @@ def test_listing_urls_carry_the_requested_date():
     assert cm and cm.endswith("showDate=2026-08-01")
     amc = resolver.listing_url("amc", "san-francisco/amc-metreon-16", day)
     assert amc and amc.endswith("/showtimes?date=2026-08-01")
-    assert resolver.listing_url("regal", "whatever", day) is None
+    # Regal has a listing (for sold-out state) even though it has no seat URL.
+    regal = resolver.listing_url("regal", "regal-hacienda-crossings-0347", day)
+    assert regal and regal.endswith("?date=08-01-2026")
+    assert resolver.listing_url("nickelodeon", "whatever", day) is None
+
+
+# --- regal sold-out capacity ------------------------------------------------- #
+
+def test_regal_sold_out_reads_disabled_and_aria():
+    html = _fixture("regal_listing.html")
+    rows = dict(resolver.regal_sold_out(html, "The Odyssey"))
+    # Only The Odyssey's showtimes, and only its 10:30pm is sold out.
+    assert set(rows) == {"7:30pm", "9:30pm", "10:30pm Sold Out"}
+    assert rows["7:30pm"] is False
+    assert rows["9:30pm"] is False
+    assert rows["10:30pm Sold Out"] is True
+
+
+def test_regal_sold_out_scopes_to_the_requested_film():
+    """Spider-Man is sold out at 7:30pm while The Odyssey is not."""
+    html = _fixture("regal_listing.html")
+    odyssey = resolver.find_sold_out("regal", html, "The Odyssey", datetime(2026, 8, 1, 19, 30))
+    spidey = resolver.find_sold_out(
+        "regal", html, "Spider-Man: Brand New Day", datetime(2026, 8, 1, 19, 30)
+    )
+    assert odyssey is False
+    assert spidey is True
+
+
+def test_find_sold_out_returns_none_when_a_chain_publishes_no_capacity():
+    """Cinemark's listing carries no sold-out signal at all."""
+    html = _fixture("cinemark_listing.html")
+    assert resolver.find_sold_out("cinemark", html, "The Odyssey", datetime(2026, 8, 1, 23, 0)) is None
+
+
+def test_find_sold_out_returns_none_for_an_unknown_showtime():
+    html = _fixture("regal_listing.html")
+    assert resolver.find_sold_out("regal", html, "The Odyssey", datetime(2026, 8, 1, 4, 5)) is None
