@@ -19,6 +19,14 @@ function formatBadgeTone(fmt) {
   return "default";
 }
 
+// Reasons arrive from providers, scrapers and chain configs; only some are written
+// as full sentences.
+function endSentence(text) {
+  const t = (text || "").trim();
+  if (!t) return "";
+  return /[.!?]$/.test(t) ? t : t + ".";
+}
+
 function SeatBadge({ seat }) {
   const s = seat.status;
   if (s === "match") {
@@ -144,9 +152,9 @@ function ShowtimeCard({ st, canVerify }) {
       )}
       {seat.status === "check_manually" && !verified && (
         <p className="text-xs text-muted-foreground">
-          {seat.reason
-            ? seat.reason
-            : "Seat availability isn't published for this showtime."}{" "}
+          {/* Reasons come from several sources and don't all end in punctuation,
+              which ran them straight into the next sentence. */}
+          {endSentence(seat.reason || "Seat availability isn't published here")}{" "}
           {links.chain
             ? `Open it at ${links.chain_label || "the theater"} to see the seat map.`
             : "Use the Fandango link to find it."}
