@@ -4,6 +4,8 @@
   "chains": {
     "cinemark": {
       "strategy": "dom",
+      "disabled": true,
+      "disabled_reason": "Cinemark's robots.txt disallows /TicketSeatMap, so its seat map must not be fetched; seats have to be checked manually. The parser below is verified and ready if that policy ever changes -- set disabled to false to re-enable it.",
       "verified": "2026-07-29 against /TicketSeatMap/ at Century Oakridge (TheaterId=477). Clean, explicit contract: 12 .seatRow containers, 199 button[available] seats, available=True|False, seattype=seat|companion|wheelchair, labels in .seatDesignation (e.g. 'A20'). Wait for .seat-placeholder.loading to clear before reading.",
       "row_selector": ".seatRow",
       "seat_selector": "button[available], .seatBlock",
@@ -68,9 +70,11 @@
       "note_render_race": "The seat SVGs paint AFTER load-state events settle, so extraction polls until at least min_seats_expected seats exist. Evaluating on 'networkidle' alone intermittently returned 0 seats, which is indistinguishable from 'markup changed'."
     },
     "regal": {
-      "strategy": "blocked",
-      "verified": "2026-07-29. Theatre pages and showtime buttons are readable (showtime URL is /movies/<slug>?site=<theatreId>&id=<showtimeId>&date=MM-DD-YYYY, and sold-out showings are marked disabled), but the seat-selection page itself presents a Cloudflare Turnstile 'Verify you are human' challenge. Solving or bypassing a CAPTCHA is out of bounds, so seat verification cannot be automated for Regal.",
-      "blocked_reason": "Regal gates seat selection behind a Cloudflare CAPTCHA; seats must be checked manually."
+      "strategy": "capacity",
+      "verified": "2026-07-29. The seat page is behind a Cloudflare Turnstile CAPTCHA, which we will not attempt to solve, so the exact seat map is unreachable. The theatre LISTING is reachable and robots-permitted, though, and it publishes sold-out state semantically: <button disabled aria-label=\"10:30pm showtime, sold out\">. ?date=MM-DD-YYYY selects the day (verified: 107 showtimes, 7 sold out for 08-01-2026). Showtimes are attributed to a film via the nearest ancestor containing a /movies/<slug> link, since the CSS classes are generated hashes.",
+      "blocked_reason": "Regal gates seat selection behind a Cloudflare CAPTCHA, so exact seats must be checked manually.",
+      "sold_out_reason": "Regal lists this showtime as sold out, so it cannot seat your group.",
+      "not_sold_out_reason": "Regal still has tickets for this showtime, but its seat map is behind a CAPTCHA, so the exact seat layout must be checked manually."
     }
   }
 }
