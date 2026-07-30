@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clapperboard, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { defaultSearch } from "@/lib/defaults";
@@ -18,6 +18,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  const resultsRef = useRef(null);
 
   const flash = (msg) => {
     setToast(msg);
@@ -72,6 +73,9 @@ export default function App() {
       const res = await api.search(form);
       setResult(res);
       saveLastSearch(form, res);
+      requestAnimationFrame(() =>
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -97,6 +101,9 @@ export default function App() {
       const res = await api.runSaved(id);
       setResult(res);
       saveLastSearch(form, res);
+      requestAnimationFrame(() =>
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
       await refreshSaved();
       flash(res.new_count > 0 ? `${res.new_count} new showtime(s) since last run` : "Re-ran — no new showtimes");
     } catch (e) {
@@ -159,13 +166,15 @@ export default function App() {
           </div>
         )}
 
+        <div ref={resultsRef} className="space-y-6">
+          <Results result={result} config={config} />
+        </div>
+
         <BrowserSeatCheck
           form={form}
           showtimes={result?.showtimes || []}
           onApply={applySeatCheck}
         />
-
-        <Results result={result} config={config} />
       </div>
 
       {toast && (
