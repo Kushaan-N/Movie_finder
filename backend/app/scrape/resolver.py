@@ -28,6 +28,8 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urljoin
 
+from ..titles import slug_matches_title
+
 logger = logging.getLogger("showtime_finder.resolver")
 
 # How far apart the provider's time and the chain's listed time may be.
@@ -105,6 +107,42 @@ def amc_candidates(html: str, base: str = "https://www.amctheatres.com") -> list
     return out
 
 
+def regal_sold_out(html: str, movie_title: str) -> list[tuple[str, bool]]:
+    """Extract (time_label, sold_out) for one movie from a Regal theatre page.
+
+    Regal's seat page is CAPTCHA-gated, but its *listing* is not, and it marks
+    sold-out showings semantically: ``<button disabled aria-label="10:30pm
+    showtime, sold out">``. A sold-out showing answers the seat question
+    definitively — no seats at all means no N-together — so this yields a real
+    result for the one case it can prove.
+
+    Showtimes must be attributed to the right film: a busy listing carries 100+
+    times across many movies. Each showtime's nearest ancestor containing a
+    ``/movies/<slug>`` link identifies the film (the CSS classes are generated
+    hashes and unusable, but that link is stable).
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html or "", "html.parser")
+    out: list[tuple[str, bool]] = []
+    for btn in soup.find_all("button"):
+        label = btn.get_text(" ", strip=True)
+        if not _TIME_RE.search(label):
+            continue
+        slug = None
+        for parent in btn.parents:
+            link = parent.find("a", href=True) if hasattr(parent, "find") else None
+            if link and "/movies/" in link["href"]:
+                slug = link["href"]
+                break
+        if not slug or not slug_matches_title(movie_title, slug.rsplit("/", 1)[-1]):
+            continue
+        aria = (btn.get("aria-label") or "").lower()
+        sold = btn.has_attr("disabled") or "sold out" in aria or "sold out" in label.lower()
+        out.append((label, sold))
+    return out
+
+
 # --- listing URLs ----------------------------------------------------------- #
 
 def cinemark_listing_url(theater_slug: str, day: datetime) -> str:
@@ -121,12 +159,38 @@ def amc_listing_url(theater_slug: str, day: datetime) -> str:
     )
 
 
+def regal_listing_url(theater_slug: str, day: datetime) -> str:
+    # Regal's theatre page takes a MM-DD-YYYY date and renders that day's
+    # showtimes, including sold-out state. The seat page beyond it is CAPTCHA-gated.
+    return f"https://www.regmovies.com/theatres/{theater_slug.strip('/')}?date={day:%m-%d-%Y}"
+
+
 _PARSERS = {"cinemark": cinemark_candidates, "amc": amc_candidates}
-_LISTINGS = {"cinemark": cinemark_listing_url, "amc": amc_listing_url}
+_LISTINGS = {
+    "cinemark": cinemark_listing_url,
+    "amc": amc_listing_url,
+    "regal": regal_listing_url,
+}
 
 
 def supports(chain: str) -> bool:
+    """Whether a showtime can be resolved to a seat page for this chain."""
     return (chain or "").lower() in _PARSERS
+
+
+def find_sold_out(chain: str, html: str, movie_title: str, start: datetime) -> Optional[bool]:
+    """Sold-out state for a showtime from a chain listing, if it publishes one.
+
+    Returns True/False when the listing says, or None when it doesn't expose
+    capacity (Cinemark's listing carries no such signal at all).
+    """
+    if (chain or "").lower() != "regal":
+        return None
+    for label, sold in regal_sold_out(html, movie_title):
+        hm = _parse_time_label(label)
+        if hm and _minutes_apart(hm, start) <= _TIME_TOLERANCE_MIN:
+            return sold
+    return None
 
 
 def listing_url(chain: str, theater_slug: str, day: datetime) -> Optional[str]:
