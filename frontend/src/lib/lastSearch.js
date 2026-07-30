@@ -38,11 +38,3 @@ export function loadLastSearch() {
     return null;
   }
 }
-
-export function clearLastSearch() {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    /* nothing to do */
-  }
-}
