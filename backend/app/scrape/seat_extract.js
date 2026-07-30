@@ -74,10 +74,30 @@
       if (r.width < SEAT_MIN || r.width > SEAT_MAX) continue;
       if (r.height < SEAT_MIN || r.height > SEAT_MAX) continue;
       if (r.width === 0 || r.height === 0) continue;
-      out.push({ el: el, x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width });
+      out.push({ el: el, x: r.x + r.width / 2, y: r.y + r.height / 2,
+                 w: r.width, h: r.height, area: r.width * r.height });
       if (out.length >= MAX_CANDIDATES) break;
     }
-    return out;
+    return dedupe(out);
+  }
+
+  // One seat is usually several nested seat-sized boxes (a wrapper, its <svg>,
+  // and the <path> inside). Measured on AMC: 822 candidates for 186 real seats,
+  // which inflated every row ~4x and doubled the available count. Keeping one
+  // element per screen position fixes that generically, without knowing the
+  // chain's markup: walk largest-first and skip anything centred on a box we
+  // already kept.
+  function dedupe(cands) {
+    cands.sort(function (a, b) { return b.area - a.area; });
+    var kept = [];
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i], tol = Math.max(4, Math.min(c.w, c.h) * 0.6), dup = false;
+      for (var j = 0; j < kept.length; j++) {
+        if (Math.abs(kept[j].x - c.x) < tol && Math.abs(kept[j].y - c.y) < tol) { dup = true; break; }
+      }
+      if (!dup) kept.push(c);
+    }
+    return kept;
   }
 
   function descriptor(el) {
