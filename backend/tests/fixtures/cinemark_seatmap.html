@@ -11,7 +11,26 @@
   Seat numbers descend left-to-right on the real page (A20 is leftmost); that is
   preserved here so ordering assumptions stay honest.
 -->
-<html><head><title>Cinemark - Reserve Your Seats</title></head>
+<html><head><title>Cinemark - Reserve Your Seats</title>
+<style>
+  /* Minimal layout mirroring the real page: uniform seat boxes laid out in rows.
+     Geometry-based extraction depends on how a page actually renders, so a fixture
+     with no CSS is not a faithful stand-in — without this, inline flow gave the
+     seats differing heights and split single rows in two. */
+  body { margin: 0; background: #0b1020; }
+  .seatRow { display: flex; align-items: center; gap: 6px; margin: 8px 12px; height: 26px; }
+  .rowDesignation { width: 18px; color: #fff; font: 12px sans-serif; }
+  .seatBlock { width: 22px; height: 22px; padding: 0; border: 1px solid #667; background: transparent; }
+  .seatAvailable { background: #6b5bd6; }
+  .seatUnavailable { background: #2a2f3a; }
+  .companionAvailable, .wheelchairAvailable { background: #6b5bd6; }
+  .seatBlank { border: none; background: none; }
+  .seatDesignation { display: none; }
+  /* The map's legend — the extractor reads state names from it. */
+  .legend { display: flex; gap: 16px; margin: 12px; color: #fff; font: 12px sans-serif; }
+  .legend span.sw { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
+</style>
+</head>
 <body>
   <div id="seatMapContainer">
 
@@ -72,5 +91,10 @@
       </button>
     </div>
 
+  </div>
+
+  <div class="legend">
+    <span><span class="sw seatAvailable"></span> Available</span>
+    <span><span class="sw seatUnavailable"></span> Occupied</span>
   </div>
 </body></html>
