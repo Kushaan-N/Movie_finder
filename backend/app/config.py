@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     # Seat verification (Playwright) — off by default; needs Playwright installed.
     enable_seat_verification: bool = False
+    # Whether /api/search ALSO verifies seats up front. Off by default because it is
+    # genuinely slow: each showtime means loading a chain listing plus a seat page
+    # through a real browser, measured at seconds each and serialized by the rate
+    # limiter, so a capped batch can add minutes to a search. On-demand verification
+    # and the browser-assisted path give the same answer without that cost.
+    seat_verification_on_search: bool = False
     seat_verification_max: int = 12  # cap per search to bound latency / politeness
     seat_verification_cache_ttl_sec: float = 600
 
