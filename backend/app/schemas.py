@@ -18,7 +18,10 @@ class TimeWindowRule(BaseModel):
 
 class SearchRequest(BaseModel):
     movie_title: str = Field(..., min_length=1)
-    format: str = "Any"  # IMAX, Dolby, Standard, XD, ScreenX, Any...
+    # `format` remains for compatibility with existing saved searches/clients.
+    # New clients use `formats` to select one or more presentation types.
+    format: str = "Any"
+    formats: list[str] = Field(default_factory=list)
     location: str = Field(..., description="Address or ZIP")
     radius_miles: float = Field(default=25, ge=1, le=200)
 
