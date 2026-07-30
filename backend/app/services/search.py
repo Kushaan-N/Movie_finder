@@ -8,6 +8,7 @@ import time as _time
 from datetime import date, datetime, time, timedelta
 
 from ..config import get_settings
+from ..formats import format_matches_any
 from ..providers.base import ProviderQuery, ProviderShowtime
 from ..providers.demo_provider import DemoProvider
 from ..providers.movieglu_provider import MovieGluProvider
@@ -40,7 +41,8 @@ def _requested_formats(req: SearchRequest) -> list[str]:
 
 
 def _format_matches_any(actual: str, requested: list[str]) -> bool:
-    return not requested or actual.lower() in {f.lower() for f in requested}
+    # Hierarchical: requesting "IMAX" accepts "70mm IMAX". See app.formats.
+    return format_matches_any(actual, requested)
 
 
 def _cache_key(req: SearchRequest, start: date, end: date) -> str:
@@ -130,9 +132,17 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
     theaters = load_theaters()
     notes: list[str] = []
 
-    # Distance/format prefilter from our theater list (used for radius filtering
-    # and to know which theaters to hand a scraper).
-    candidates = candidate_theaters(req.location, req.radius_miles, requested_formats)
+    # Distance prefilter from our theater list (used for radius filtering and to
+    # know which theaters to ask a provider about).
+    #
+    # Deliberately NOT format-filtered. theaters.json format lists are
+    # hand-maintained and go stale — AMC Eastridge 15 was listed Dolby/Standard
+    # while Google was reporting real IMAX showings there — so using them to pick
+    # which theaters to even query silently hid showtimes that exist. Formats are
+    # filtered below, against what the provider actually reports. Cost: a
+    # format-narrowed search now queries the same number of theaters as an "Any"
+    # search, so the radius is what bounds provider quota.
+    candidates = candidate_theaters(req.location, req.radius_miles, [])
     dist_by_theater_id = {t.id: d for t, d in candidates}
 
     query = ProviderQuery(
@@ -191,11 +201,18 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
         )
 
     showtimes: list[Showtime] = []
+    # Track why rows were dropped so an empty result can explain itself instead of
+    # just saying "no showtimes matched".
+    dropped_format: set[str] = set()
+    dropped_time = 0
+    dropped_radius = 0
     for st in raw:
         if not _format_matches_any(st.format, requested_formats):
+            dropped_format.add(st.format)
             continue
         # Time-of-day / day-of-week rule.
         if not _passes_time_rule(st.start_datetime, cutoff, req.time_rule.weekends_unrestricted):
+            dropped_time += 1
             continue
 
         matched = _match_theater(st.theater_name, theaters)
@@ -209,6 +226,7 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
         # Radius filter whenever we have a distance at all (now works on live data).
         if distance is not None and distance > req.radius_miles:
+            dropped_radius += 1
             continue
 
         seat_check = check_seats(
@@ -232,6 +250,28 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
                 seat_check=seat_check,
             )
         )
+
+    # The provider found the movie but every row was filtered out locally. Say
+    # which filter did it — otherwise this is indistinguishable from "not playing".
+    if raw and not showtimes:
+        if dropped_format:
+            offered = ", ".join(sorted(dropped_format))
+            notes.append(
+                f"Found {len(raw)} showtime(s) for '{req.movie_title}', but none in "
+                f"{' or '.join(requested_formats)}. Available format(s) here: {offered}. "
+                "Adjust the format filter to see them."
+            )
+        if dropped_time:
+            notes.append(
+                f"{dropped_time} showtime(s) were dropped by the "
+                f"{req.time_rule.weekday_cutoff} weekday cutoff. Lower the cutoff to "
+                "include earlier screenings."
+            )
+        if dropped_radius:
+            notes.append(
+                f"{dropped_radius} showtime(s) were outside the "
+                f"{req.radius_miles:g}-mile radius."
+            )
 
     # Stable ordering: theater name, then datetime.
     showtimes.sort(key=lambda s: (s.theater_name.lower(), s.start_datetime))
