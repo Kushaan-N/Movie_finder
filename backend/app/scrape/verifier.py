@@ -45,6 +45,7 @@ resolution and parsing can be unit-tested by monkeypatching it.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime
@@ -62,7 +63,7 @@ from ..schemas import SeatCheck, Showtime
 from ..services.seatcheck import evaluate_rows
 from ..services.theaters import load_theaters
 from . import resolver
-from .geometry import EXTRACT_JS, rows_from_extraction
+from .extract import call_expression, rows_from_payload
 from .seatmap import SeatMapParseResult, _chain_cfg, parse_seat_html
 
 logger = logging.getLogger("showtime_finder.verifier")
@@ -234,7 +235,7 @@ class SeatVerifier:
                 want = int(cfg.get("min_seats_expected") or 1)
                 deadline = time.time() + float(cfg.get("seat_wait_max_sec") or 20)
                 while True:
-                    data = await page.evaluate(EXTRACT_JS, cfg)
+                    data = await page.evaluate(call_expression(json.dumps(cfg)))
                     found = int(((data or {}).get("stats") or {}).get("seats_found") or 0)
                     if found >= want or time.time() >= deadline:
                         break
@@ -407,7 +408,7 @@ class SeatVerifier:
             if html is None:
                 result = SeatMapParseResult(None, reason=why)
             elif strategy == "geometry":
-                result = rows_from_extraction(extraction, cfg, page_text=html)
+                result = rows_from_payload(extraction, cfg, page_text=html)
             else:
                 result = parse_seat_html(chain, html)
 
