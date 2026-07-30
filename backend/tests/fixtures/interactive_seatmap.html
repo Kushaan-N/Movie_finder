@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  A seat map whose availability lives ONLY in whether the seat is a live control:
+  free seats are enabled buttons, taken seats carry `disabled` or
+  `aria-disabled="true"`. No availability attribute, no distinguishing colour.
+
+  This is not a copy of any one chain's seat page. It exists because the extractor
+  has to be chain-agnostic: Regal's seat page is behind a CAPTCHA so its markup
+  could not be inspected to build selectors from, and the disabled-control pattern
+  is exactly how Regal marks state on the pages that ARE readable (its listing uses
+  `<button disabled aria-label="10:30pm showtime, sold out">`). Testing the strategy
+  on its own terms is honest; pretending to know Regal's seat markup would not be.
+
+  Layout: 4 rows x 12. Row 3 has a run of 5 enabled seats; an aisle splits each row.
+-->
+<html><head><meta charset="utf-8"><title>Select seats</title>
+<style>
+  body { margin: 0; background: #101418; }
+  .row { display: flex; align-items: center; gap: 5px; margin: 9px 14px; height: 24px; }
+  .aisle { width: 44px; }               /* wide gap -> detected as an aisle */
+  button.seat { width: 20px; height: 20px; padding: 0; border: 1px solid #556;
+                background: #2b3340; }  /* identical paint for free and taken */
+  button.seat[disabled] { cursor: not-allowed; }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    // 4 rows of 12. `true` = enabled (free). Row 3 (index 2) holds a run of 5.
+    const LAYOUT = [
+      [false,false,false,false,false,false, false,false,false,false,false,false],
+      [true, false,false,false,false,false, false,false,false,false,false,true ],
+      [false,true, true, true, true, true,  true, false,false,false,false,false],
+      [false,false,false,false,false,false, false,false,false,false,false,false],
+    ];
+    const map = document.getElementById('map');
+    LAYOUT.forEach((row, r) => {
+      const div = document.createElement('div');
+      div.className = 'row';
+      row.forEach((free, i) => {
+        if (i === 6) {                       // aisle between seat 6 and 7
+          const gap = document.createElement('span');
+          gap.className = 'aisle';
+          div.appendChild(gap);
+        }
+        const b = document.createElement('button');
+        b.className = 'seat';
+        b.setAttribute('aria-label', `Row ${r + 1} seat ${i + 1}`);
+        if (!free) {
+          if (i % 2 === 0) b.disabled = true;             // disabled attribute
+          else b.setAttribute('aria-disabled', 'true');   // ...or the ARIA form
+        }
+        div.appendChild(b);
+      });
+      map.appendChild(div);
+    });
+  </script>
+</body></html>
