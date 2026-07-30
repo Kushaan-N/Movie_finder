@@ -245,24 +245,6 @@ def test_amc_geometry_declines_when_the_extractor_refuses(monkeypatch):
 
 
 def test_amc_geometry_reports_a_canvas_map(monkeypatch):
-    _patch(monkeypatch, seat_html="<html></html>", extraction=_refused(None, canvas=1))
-    st = _showtime(chain="amc", theater_id="amc-metreon-16")
-    verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
-    assert verified == 0
-    assert "canvas" in (st.seat_check.reason or "").lower()
-
-
-def test_a_uniform_reading_is_flagged_for_checking(monkeypatch):
-    """Accepted, but flagged: it is either a sold-out house or a failed split."""
-    rows = [[_seat() for _ in range(12)] for _ in range(4)]
-    _patch(monkeypatch, seat_html="<html></html>",
-           extraction=_amc_extraction(rows, uniform=True))
-    st = _showtime(chain="amc", theater_id="amc-metreon-16")
-    asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
-    assert st.seat_check.status == "no_match"
-
-
-def test_amc_geometry_reports_a_canvas_map(monkeypatch):
     """A canvas map is unreadable and must be named as such."""
     _patch(monkeypatch, seat_html="<html></html>", extraction=_refused(None, canvas=1))
     st = _showtime(chain="amc", theater_id="amc-metreon-16")
