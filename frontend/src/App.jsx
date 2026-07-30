@@ -85,7 +85,11 @@ export default function App() {
   };
 
   const loadSaved = (s) => {
-    setForm({ ...defaultSearch(), ...s.config });
+    setForm({
+      ...defaultSearch(),
+      ...s.config,
+      formats: s.config.formats?.length ? s.config.formats : [s.config.format || "Any"],
+    });
     flash(`Loaded “${s.name}” into the form`);
   };
 
