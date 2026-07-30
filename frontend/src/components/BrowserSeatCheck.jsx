@@ -200,10 +200,14 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
               ))}
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Compare this against the map on screen — it was read from the rendered
-            page, not from a documented API.
-          </p>
+          {result.stats?.caution ? (
+            <p className="text-xs text-amber-300/90">{result.stats.caution}</p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Compare this against the map on screen — it was read from the rendered
+              page, not from a documented API.
+            </p>
+          )}
 
           {candidates.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">

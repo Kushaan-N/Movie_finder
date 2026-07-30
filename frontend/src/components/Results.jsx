@@ -189,6 +189,12 @@ function ShowtimeCard({ st, canVerify }) {
       {verified && !verified.grid?.length && verified.reason && (
         <p className="text-xs text-amber-300/80">{verified.reason}</p>
       )}
+      {/* A grid read as entirely one state is either a real sold-out/empty house or
+          a reader that couldn't tell the states apart. Those look identical, so say
+          so rather than presenting the verdict as settled. */}
+      {verified?.stats?.caution && (
+        <p className="text-xs text-amber-300/90">{verified.stats.caution}</p>
+      )}
       {/* Resolving this URL is the expensive half of verification, so offer it
           whatever the outcome -- it is the exact page for this showtime. */}
       {verified?.seat_url && (
