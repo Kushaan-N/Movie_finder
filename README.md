@@ -28,8 +28,9 @@ auth later is additive, not a rewrite.
   that are new since the last run.
 - Seat-check status badges: 🟢 match / 🟡 check manually / 🔴 no block — and it
   **never fabricates** a match when a seat map can't be parsed.
-- **Playwright seat verification** (AMC/Regal/Cinemark): renders the booking page,
-  parses the seat map via config-driven selectors, and upgrades "check manually"
+- **Playwright seat verification** (AMC only — Cinemark's robots.txt disallows its
+  seat map and Regal uses a CAPTCHA): renders the chain's seat page, reads the map,
+  and upgrades "check manually"
   into a real match/no-match — with an offline debug harness to tune selectors
   against real pages. Rate-limited, robots-aware, canvas/login-wall safe.
 - **Radius filtering on live data**: SerpApi's per-theater distance is parsed and
@@ -125,9 +126,12 @@ playwright install chromium
 > **How quota is spent:** Google only serves its showtimes widget for
 > *theater-name* queries, so one search costs **one SerpApi request per theater in
 > range** — not one per search. A 25-mile radius over the default `theaters.json`
-> is typically 1–3 requests. Two things keep this bounded: the radius/format
-> prefilter (only in-range theaters are queried) and `search_cache_ttl_sec`
-> (identical searches are served from cache for 5 minutes). Widening the radius or
+> is typically 1–3 requests. Two things keep this bounded: the **radius** prefilter
+> (only in-range theaters are queried) and `search_cache_ttl_sec` (identical
+> searches are served from cache for 5 minutes). Note that narrowing the *format*
+> does **not** reduce cost — formats are filtered against what the provider
+> actually reports, because `theaters.json` format lists go stale and using them to
+> choose which theaters to query silently hid real showtimes. Widening the radius or
 > adding theaters increases per-search cost proportionally. Check remaining quota
 > at https://serpapi.com/account.
 >
@@ -142,7 +146,8 @@ to live data.
 
 Note: SerpApi (and MovieGlu) don't expose seat maps, so their showtimes come back as
 **"check manually"** for seats — which is correct, not a bug. Real seat verification
-arrives via the Playwright per-chain parsers (pass 2, scaffolded in
+comes from the Playwright per-chain parsers (AMC only; see "Seat verification" below,
+implemented in
 `backend/app/providers/scraper_provider.py`).
 
 ---
@@ -154,6 +159,7 @@ arrives via the Playwright per-chain parsers (pass 2, scaffolded in
 | 1 | SerpApi Google Showtimes | `SERPAPI_KEY` | No → "check manually" |
 | 2 | MovieGlu | `MOVIEGLU_*` creds | No → "check manually" |
 | 3 | Playwright scraper (Fandango/AMC/Regal/Cinemark) | `ENABLE_SCRAPER_FALLBACK=true` | Yes, per-chain parser |
+| — | Seat verification (enriches the above) | `ENABLE_SEAT_VERIFICATION=true` | AMC only — see below |
 | 4 | Demo (synthetic) | *auto when nothing above is set* | Yes (fabricated for demo) |
 
 Each falls back to the next when unavailable or empty. The scraper is rate-limited and
@@ -161,41 +167,80 @@ respects `robots.txt`.
 
 ---
 
-## Seat verification (Playwright, pass 2)
+## Seat verification (Playwright)
 
-SerpApi/MovieGlu give showtimes but no seat maps, so their results are "check
-manually" for seats. **Seat verification** closes that gap: for supported chains
-(AMC, Regal, Cinemark) it renders the booking page with Playwright, parses the
-seat map, and upgrades the badge to a real 🟢 match / 🔴 no-match — honoring
-`seats_together`, `min_row`, and the per-chain physical-row normalization.
+SerpApi/MovieGlu give showtimes but no seat maps, so their results start as "check
+manually". **Seat verification** closes that gap: it renders the chain's own seat
+page, reads the map, and upgrades the badge to a real 🟢 match / 🔴 no-match —
+honoring `seats_together`, `min_row`, and physical-row normalization.
 
-- Turn it on: `ENABLE_SEAT_VERIFICATION=true` in `backend/.env` (+ `playwright
-  install chromium`). It's rate-limited, respects `robots.txt`, is capped per
-  search (`SEAT_VERIFICATION_MAX`), and caches per URL. It **never fabricates** a
-  match — if the map is a `<canvas>`, behind a login wall, or the markers can't be
-  read, it stays "check manually" with the reason surfaced.
-- It enriches showtimes we already have booking URLs for (it does **not** re-scrape
-  showtime discovery), which is the reliable, high-value part.
-- Two ways it runs:
-  - **Up-front** (during `/api/search`, real providers only — never demo data).
-  - **On-demand**: a **"Check seats"** button appears on any "check manually" card
-    (when the server has verification enabled and the results are real). It calls
-    `POST /api/verify-seats`, upgrades the badge, and shows a **seat-grid preview**
-    with each row's physical position so you can eyeball the open block.
+Turn it on with `ENABLE_SEAT_VERIFICATION=true` in `backend/.env` (+ `playwright
+install chromium`).
+
+### What works, per chain — and why
+
+Each chain was checked against its live seat page on **2026-07-29**. They differ
+enough that one parser cannot cover them, and two of the three cannot be automated
+at all. This is the honest state, not a to-do list:
+
+| Chain | Status | Why |
+|---|---|---|
+| **AMC** | ✅ **Works** | Seat page needs no login and its `robots.txt` permits it. No `<canvas>` — but also no seat attributes and **no `<text>` at all** (labels are SVG `<path>` glyphs), so seats are recovered from layout **geometry** plus resolved **gradient fills**. |
+| **Cinemark** | ❌ Disallowed | Its markup is the cleanest of the three (`button[available="True\|False"]` inside `.seatRow`), but `robots.txt` explicitly disallows `/TicketSeatMap` — the seat map itself. The parser is implemented and tested, and stays unused. |
+| **Regal** | ❌ Blocked | The seat page presents a Cloudflare **Turnstile CAPTCHA**. Solving or bypassing it is out of bounds. |
+
+Verification of a blocked chain doesn't fail vaguely — the UI is told the actual
+reason ("Regal gates seat selection behind a Cloudflare CAPTCHA").
+
+### How a showtime becomes a seat map
+
+A provider's `link` is a `google.com/search` URL, not a seat page, so the seat URL
+is resolved from the chain's own listing (`app/scrape/resolver.py`): one listing
+load per theater/date, cached and shared across that date's showtimes.
+
+  * AMC — `/movie-theatres/<slug>/showtimes?date=…` → `/showtimes/<id>/seats`
+  * Cinemark — `/theatres/<slug>?showDate=…` → `/TicketSeatMap/?…` *(disallowed)*
+
+`chain_slug` in `theaters.json` maps each theater to its path on the chain's site.
+
+### Guarantees
+
+It is rate-limited, capped per search (`SEAT_VERIFICATION_MAX`), caches per URL,
+and **never fabricates** a match. It declines with a surfaced reason when the map is
+a `<canvas>`, behind a login wall, or when too few seats are recognizable (which is
+how a changed gradient palette shows up). `robots.txt` is honored, and when it
+can't be read the answer is "don't scrape" rather than a guess — see
+`app/robots.py`, which merges *all* `User-agent: *` groups and rejects bot-check
+pages that would otherwise parse as "allow everything".
+
+Two ways it runs:
+  - **Up-front** during `/api/search` (real providers only — never demo data).
+  - **On-demand** via a **"Check seats"** button on any "check manually" card,
+    which calls `POST /api/verify-seats` and shows a **seat-grid preview** with each
+    row's physical position.
+
+Expect it to be slow: pages are heavy and loads are serialized and rate-limited, so
+budget a few seconds per showtime. That's why it's capped.
 
 ### Proven end-to-end
 
-The full render → parse → seat-check pipeline is covered by real-browser tests
-(`tests/test_e2e_playwright.py`, `tests/test_verify_endpoint.py`): actual Chromium
-renders locally-served fixture seat pages for AMC/Regal/Cinemark and the badges
-upgrade correctly. Only the target host differs from production (localhost fixtures
-vs. a chain's live, bot-protected site — which shouldn't be scraped in tests).
+`tests/test_e2e_playwright.py` and `tests/test_verify_endpoint.py` drive real
+Chromium over locally-served fixtures through the whole flow — listing → seat-URL
+resolution → render → extract → seat check — covering both the geometry (AMC) and
+DOM (Cinemark) strategies plus the blocked chain. Fixtures mirror markup captured
+from the live sites; only the host differs, since the real sites are bot-protected
+and shouldn't be hit from tests.
+
+Verified against production directly on 2026-07-29: AMC Metreon 16, Sat Aug 1
+10:30 PM returned 186 seats in 9 rows with 45 available — `[20, 18, 7, 0, 0, …]`
+front-to-back, matching a screenshot of the same map.
 
 ### Parsing is config-driven — tune it against a real page
 
-The CSS selectors that read each chain's seat map live in **`scrape_selectors.json`**
-(hand-editable). Chain markup changes, so verify/tune them offline with the debug
-harness — save a real seat-selection page from your browser, then:
+Per-chain extraction config lives in **`scrape_selectors.json`** (hand-editable),
+including which strategy each chain uses and the verified evidence behind it. Chain
+markup changes, so re-verify offline with the debug harness — save a real
+seat-selection page from your browser, then:
 
 ```bash
 cd backend && source .venv/bin/activate
