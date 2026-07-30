@@ -78,24 +78,31 @@
                  w: r.width, h: r.height, area: r.width * r.height });
       if (out.length >= MAX_CANDIDATES) break;
     }
-    return dedupe(out);
+    return out;
   }
 
-  // One seat is usually several nested seat-sized boxes (a wrapper, its <svg>,
-  // and the <path> inside). Measured on AMC: 822 candidates for 186 real seats,
-  // which inflated every row ~4x and doubled the available count. Keeping one
-  // element per screen position fixes that generically, without knowing the
-  // chain's markup: walk largest-first and skip anything centred on a box we
-  // already kept.
-  function dedupe(cands) {
-    cands.sort(function (a, b) { return b.area - a.area; });
+  // One seat is usually several nested seat-sized boxes (a wrapper, its <svg>, and
+  // the <path> inside). Measured on AMC: 822 candidates for 186 real seats, which
+  // inflated every row ~4x and doubled the available count.
+  //
+  // Deduping runs per strategy, on the seats a strategy has already classified,
+  // NOT on raw candidates. Doing it up front picked whichever nested box was
+  // largest -- the unpainted wrapper -- and destroyed the availability signal the
+  // paint strategy needed. Each strategy only emits elements it could read, so any
+  // survivor at a position is equally good.
+  function dedupeSeats(seats, tol) {
+    tol = tol || 6;
     var kept = [];
-    for (var i = 0; i < cands.length; i++) {
-      var c = cands[i], tol = Math.max(4, Math.min(c.w, c.h) * 0.6), dup = false;
+    for (var i = 0; i < seats.length; i++) {
+      var s = seats[i], dup = false;
       for (var j = 0; j < kept.length; j++) {
-        if (Math.abs(kept[j].x - c.x) < tol && Math.abs(kept[j].y - c.y) < tol) { dup = true; break; }
+        if (Math.abs(kept[j].x - s.x) < tol && Math.abs(kept[j].y - s.y) < tol) {
+          // Prefer a real seat over a gap marker at the same spot.
+          if (kept[j].gap && !s.gap) kept[j] = s;
+          dup = true; break;
+        }
       }
-      if (!dup) kept.push(c);
+      if (!dup) kept.push(s);
     }
     return kept;
   }
@@ -171,8 +178,12 @@
     return (mx - mn) / mx;
   }
 
-  // Resolve an element's paint: an svg seat's gradient stops, else its own fill
-  // or background colour.
+  // Resolve an element's paint.
+  //
+  // Returns null when the element declares no paint at all — that means "not a
+  // seat" and it must be skipped. Returns {rgb: null} when paint IS declared but
+  // resolves to transparent, which is how AMC draws a TAKEN seat. Conflating those
+  // two loses either the taken seats or picks up every unpainted wrapper.
   function paintOf(el) {
     var svg = el.tagName === 'svg' ? el
             : (el.firstElementChild && el.firstElementChild.tagName === 'svg' ? el.firstElementChild : null);
@@ -180,7 +191,10 @@
     var target = path || el;
     var fill = target.getAttribute && target.getAttribute('fill');
     if (fill) {
-      var m = String(fill).match(/url\(#(.+)\)/);
+      var f = norm(fill);
+      // An explicit "none" is decoration (icons, the screen arc), not a seat.
+      if (f === 'none' || f === 'currentcolor') return null;
+      var m = f.match(/url\(#(.+)\)/);
       if (m) {
         var grad = null;
         try { grad = (svg || document).querySelector('#' + CSS.escape(m[1])); } catch (e) {}
@@ -191,19 +205,26 @@
           var rgb = parseColor(stops[i].getAttribute('stop-color'));
           if (rgb && saturation(rgb) > saturation(best)) best = rgb;
         }
-        return best; // null when every stop is transparent
+        return { rgb: best }; // rgb null == every stop transparent == taken
       }
-      return parseColor(fill);
+      return { rgb: parseColor(fill) };
     }
     var cs = window.getComputedStyle(el);
-    return parseColor(cs.backgroundColor) || parseColor(cs.borderColor);
+    var bg = parseColor(cs.backgroundColor);
+    if (bg) return { rgb: bg };
+    // A visible border with no fill is still a drawn seat (outline = taken).
+    var bw = parseFloat(cs.borderTopWidth || '0');
+    if (bw > 0 && parseColor(cs.borderTopColor)) return { rgb: null };
+    return null;
   }
 
   function byPaint(cands) {
     var read = [];
     for (var i = 0; i < cands.length; i++) {
       var c = cands[i];
-      read.push({ x: c.x, y: c.y, rgb: paintOf(c.el) });
+      var p = paintOf(c.el);
+      if (!p) continue; // no paint declared -> not a seat
+      read.push({ x: c.x, y: c.y, rgb: p.rgb });
     }
     if (!read.length) return [];
 
@@ -233,7 +254,7 @@
 
   // --- shared: cluster into rows ------------------------------------------ //
   function toRows(seats) {
-    seats = seats.slice().sort(function (a, b) { return a.y - b.y; });
+    seats = dedupeSeats(seats.slice()).sort(function (a, b) { return a.y - b.y; });
     var rows = [], cur = [];
     for (var i = 0; i < seats.length; i++) {
       if (cur.length && Math.abs(seats[i].y - cur[cur.length - 1].y) > ROW_TOL) {
