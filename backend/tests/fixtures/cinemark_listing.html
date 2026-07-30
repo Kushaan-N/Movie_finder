@@ -3,12 +3,26 @@
   Trimmed copy of a Cinemark theatre page's showtime links, verified live on
   2026-07-29. Showtimes are plain anchors to /TicketSeatMap/ with query params,
   which is what makes seat-URL resolution possible for this chain.
+
+  Grouped per film via a /movies/<slug> link, and a second film shares the 11:00pm
+  slot on purpose: matching on time alone attributes another film's seat map to
+  your showtime, which is exactly what happened on AMC's live listing.
 -->
 <html><head><title>Cinemark Century Oakridge 20 XD and SCREENX</title></head>
 <body>
-  <div class="showtimes">
-    <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770101&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T19:30:00">7:30pm</a>
-    <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770102&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T19:45:00">7:45pm</a>
-    <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770106&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T23:00:00">11:00pm</a>
+  <div class="movie">
+    <a href="/movies/the-odyssey"><h2>The Odyssey</h2></a>
+    <div class="showtimes">
+      <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770101&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T19:30:00">7:30pm</a>
+      <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770102&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T19:45:00">7:45pm</a>
+      <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770106&amp;CinemarkMovieId=108919&amp;Showtime=2026-08-01T23:00:00">11:00pm</a>
+    </div>
+  </div>
+
+  <div class="movie">
+    <a href="/movies/spider-man-brand-new-day"><h2>Spider-Man: Brand New Day</h2></a>
+    <div class="showtimes">
+      <a href="/TicketSeatMap/?TheaterId=477&amp;ShowtimeId=770201&amp;CinemarkMovieId=108920&amp;Showtime=2026-08-01T23:00:00">11:00pm</a>
+    </div>
   </div>
 </body></html>

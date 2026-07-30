@@ -1,15 +1,35 @@
 <!DOCTYPE html>
 <!--
   Trimmed copy of AMC's real theatre-showtimes markup, verified live on
-  2026-07-29 at AMC Metreon 16. Each showing links to /showtimes/<numeric id>;
-  the seat map is that URL with /seats appended. AMC also leaks useful capacity
-  hints in the link text ("Almost Full"), which is preserved here.
+  2026-07-29 at AMC Metreon 16 / Eastridge 15.
+
+  The structure that matters: a film's showtimes live inside a <section> that also
+  carries a link to /movies/<slug>, and each showing links to
+  /showtimes/<numeric id> (the seat map is that URL plus /seats). AMC also leaks
+  useful capacity hints in the link text ("Almost Full").
+
+  A SECOND film is included at an overlapping time on purpose. Matching showtimes
+  on time alone resolved "The Odyssey at 7:00pm" to Spider-Man's seat map on the
+  live site and reported its availability as the answer, so the fixture has to be
+  able to catch that.
 -->
 <html><head><title>AMC Metreon 16 Showtimes</title></head>
 <body>
-  <div class="showtimes">
-    <a href="/showtimes/144251399">12:00pm UP TO 15% OFF, Almost Full</a>
-    <a href="/showtimes/144251396">7:00pm Almost Full</a>
-    <a href="/showtimes/144251397">11:00pm</a>
-  </div>
+  <section>
+    <a href="/movies/the-odyssey-76238"><h2>The Odyssey</h2></a>
+    <div class="showtimes">
+      <a href="/showtimes/144251399">12:00pm UP TO 15% OFF, Almost Full</a>
+      <a href="/showtimes/144251396">7:00pm Almost Full</a>
+      <a href="/showtimes/144251397">11:00pm</a>
+    </div>
+  </section>
+
+  <section>
+    <a href="/movies/spider-man-brand-new-day-78598"><h2>Spider-Man: Brand New Day</h2></a>
+    <div class="showtimes">
+      <!-- Same 7:00pm slot as The Odyssey above. -->
+      <a href="/showtimes/144541318">7:00pm</a>
+      <a href="/showtimes/144541319">10:15pm</a>
+    </div>
+  </section>
 </body></html>
