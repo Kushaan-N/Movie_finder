@@ -111,10 +111,14 @@ class SavedSearchRunResponse(SearchResponse):
 # --------------------------------------------------------------------------- #
 class VerifySeatsRequest(BaseModel):
     chain: str
-    booking_url: str
+    theater_id: str
+    # The seat page is resolved from the chain's own showtimes listing using
+    # theater + start time. booking_url is kept for compatibility but is not used
+    # for verification: providers hand back google.com search links, not seat pages.
+    start_datetime: datetime
+    booking_url: Optional[str] = None
     seats_together: int = Field(default=4, ge=1, le=20)
     min_row: int = Field(default=5, ge=1, le=60)
-    theater_id: str = "single"
 
 
 class SeatGridRow(BaseModel):
