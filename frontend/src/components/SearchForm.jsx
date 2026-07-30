@@ -114,6 +114,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             <div className="flex h-10 items-center">
               <input
                 type="range"
+                aria-label={`Search radius in miles (currently ${value.radius_miles})`}
                 min={1}
                 max={100}
                 value={value.radius_miles}
@@ -132,6 +133,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             </Label>
             <Input
               type="date"
+              aria-label="Earliest date"
               value={value.date_from}
               onChange={(e) => set({ date_from: e.target.value })}
             />
@@ -142,6 +144,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             </Label>
             <Input
               type="date"
+              aria-label="Latest date"
               value={value.date_to}
               onChange={(e) => set({ date_to: e.target.value })}
             />
@@ -158,6 +161,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
               <Label hint="weekdays start at/after">Weekday cutoff</Label>
               <Input
                 type="time"
+                aria-label="Weekday cutoff — weekdays start at or after this time"
                 value={value.time_rule.weekday_cutoff}
                 onChange={(e) => setRule({ weekday_cutoff: e.target.value })}
               />
@@ -165,6 +169,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             <div className="flex items-end justify-between gap-3 pb-2">
               <Label className="mb-0">Weekends unrestricted</Label>
               <Switch
+                aria-label="Weekends unrestricted — ignore the cutoff on Saturday and Sunday"
                 checked={value.time_rule.weekends_unrestricted}
                 onChange={(v) => setRule({ weekends_unrestricted: v })}
               />
@@ -181,6 +186,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             <div>
               <Label>Seats together</Label>
               <Stepper
+                label="seats together"
                 value={value.seats_together}
                 onChange={(v) => set({ seats_together: v })}
                 min={1}
@@ -189,7 +195,13 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             </div>
             <div>
               <Label>Minimum row</Label>
-              <Stepper value={value.min_row} onChange={(v) => set({ min_row: v })} min={1} max={40} />
+              <Stepper
+                label="minimum row"
+                value={value.min_row}
+                onChange={(v) => set({ min_row: v })}
+                min={1}
+                max={40}
+              />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Physical position from the screen — e.g. 5 = row 5 or further back (not the label;
                 see row normalization).
