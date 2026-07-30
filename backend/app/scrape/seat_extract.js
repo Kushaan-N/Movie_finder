@@ -284,7 +284,8 @@
     return out;
   }
 
-  function byPaint(cands) {
+  // Collect paint readings WITHOUT deciding what they mean yet.
+  function readPaint(cands) {
     var read = [];
     for (var i = 0; i < cands.length; i++) {
       var c = cands[i];
@@ -292,7 +293,21 @@
       if (!p) continue; // no paint declared -> not a seat
       read.push({ x: c.x, y: c.y, h: c.h, rgb: p.rgb, rank: p.rank });
     }
-    if (!read.length) return [];
+    return read;
+  }
+
+  // Decide which colour means "free", using ONLY the cells that survived row
+  // filtering. Deciding earlier let page chrome pollute the distribution: two
+  // saturated blue chrome boxes were enough to push the choice from
+  // painted-vs-unpainted to saturation and invert an entire map.
+  //
+  // Returns false when the readings cannot be split, so the caller can decline.
+  function decidePaint(rows) {
+    var cells = [];
+    for (var r = 0; r < rows.length; r++)
+      for (var j = 0; j < rows[r].length; j++)
+        if (!rows[r][j].gap) cells.push(rows[r][j]);
+    if (!cells.length) return false;
 
     var isAvail, source;
     var legend = palette && palette.length ? null : legendPalette();
@@ -317,9 +332,9 @@
       };
     } else {
       var painted = 0, unpainted = 0, i2;
-      for (i2 = 0; i2 < read.length; i2++) (read[i2].rgb ? painted++ : unpainted++);
-      var sats = read.map(function (s) { return saturation(s.rgb); })
-                     .filter(function (v) { return v >= 0; }).sort(function (a, b) { return a - b; });
+      for (i2 = 0; i2 < cells.length; i2++) (cells[i2].rgb ? painted++ : unpainted++);
+      var sats = cells.map(function (s) { return saturation(s.rgb); })
+                      .filter(function (v) { return v >= 0; }).sort(function (a, b) { return a - b; });
       var spread = sats.length ? sats[sats.length - 1] - sats[0] : 0;
 
       if (painted >= 3 && unpainted >= 3 && spread < 0.15) {
@@ -334,13 +349,12 @@
         source = 'saturation';
         isAvail = function (rgb) { return saturation(rgb) > mid; };
       } else {
-        return []; // one visual state only — refuse rather than guess
+        return false; // one visual state only — refuse rather than guess
       }
     }
+    for (var c2 = 0; c2 < cells.length; c2++) cells[c2].available = !!isAvail(cells[c2].rgb);
     lastPaintSource = source;
-    return read.map(function (s) {
-      return { x: s.x, y: s.y, h: s.h, available: !!isAvail(s.rgb), rank: s.rank };
-    });
+    return true;
   }
 
   // --- shared: cluster into rows ------------------------------------------ //
@@ -381,7 +395,7 @@
         if (j > 0 && pitch > 0 && (row[j].x - row[j - 1].x) > pitch * AISLE) {
           cells.push({ available: false, gap: true });
         }
-        cells.push({ available: !!row[j].available, gap: !!row[j].gap });
+        cells.push({ available: !!row[j].available, gap: !!row[j].gap, rgb: row[j].rgb });
       }
       out.push(cells);
     }
@@ -423,11 +437,17 @@
   var attempts = [
     { name: 'attr', fn: byAttr },
     { name: 'interactive', fn: byInteractive },
-    { name: 'paint', fn: byPaint }
+    // Paint is two-phase: read the colours, cluster and filter rows, and only
+    // then decide which colour means "free" — using the surviving seats alone.
+    { name: 'paint', fn: readPaint, decide: decidePaint }
   ];
   var tried = {};
   for (var a = 0; a < attempts.length; a++) {
     var rows = toRows(attempts[a].fn(cands));
+    if (attempts[a].decide && rows.length && !attempts[a].decide(rows)) {
+      tried[attempts[a].name] = { seats: 0, rows: 0, undecidable: true };
+      continue;
+    }
     var s = score(rows);
     tried[attempts[a].name] = s;
     if (s.seats >= MIN_SEATS && s.rows >= MIN_ROWS) {
