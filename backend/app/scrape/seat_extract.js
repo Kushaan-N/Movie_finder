@@ -362,7 +362,30 @@
       }
       out.push(cells);
     }
-    return out;
+    return dropNonSeatRows(out);
+  }
+
+  // Discard clusters that aren't auditorium rows.
+  //
+  // Page chrome sits at seat size too — nav icons, the collapse button, legend
+  // swatches — and on AMC it formed two clusters (5 and 1 elements) ABOVE the map.
+  // Left in, they shift every physical row number by two and silently corrupt
+  // min_row, which is defined as distance from the screen.
+  //
+  // A real auditorium has broadly uniform rows, so anything far narrower than the
+  // typical row is not one. Comparing against the median (not the max) keeps
+  // genuinely short front rows.
+  function dropNonSeatRows(rows) {
+    if (rows.length < 3) return rows;
+    var widths = rows.map(function (r) {
+      return r.filter(function (c) { return !c.gap; }).length;
+    });
+    var sorted = widths.slice().sort(function (a, b) { return a - b; });
+    var median = sorted[Math.floor(sorted.length / 2)];
+    var floor = Math.max(3, Math.round(median * 0.4));
+    var kept = [];
+    for (var i = 0; i < rows.length; i++) if (widths[i] >= floor) kept.push(rows[i]);
+    return kept.length >= MIN_ROWS ? kept : rows;
   }
 
   function score(rows) {
