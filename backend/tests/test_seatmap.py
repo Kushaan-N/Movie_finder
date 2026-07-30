@@ -1,4 +1,11 @@
-"""Seat-map HTML parser: DOM order, availability, wall/canvas safety, fallbacks."""
+"""Selector-based seat-map parsing (the `dom` strategy).
+
+Exercised against Cinemark, the one chain that actually serves a parseable
+attribute contract. The previous version of this file tested invented AMC and
+Regal markup that does not exist on either site — AMC renders seats as SVG paths
+with no attributes (see scrape.geometry) and Regal's seat page is CAPTCHA-gated —
+so those fixtures were deleted rather than left to imply coverage.
+"""
 import os
 
 from app.scrape.seatmap import parse_seat_html
@@ -11,92 +18,83 @@ def _fixture(name: str) -> str:
         return f.read()
 
 
-def test_amc_fixture_parses_in_dom_order():
-    res = parse_seat_html("amc", _fixture("amc_seatmap.html"))
+def _cinemark():
+    return parse_seat_html("cinemark", _fixture("cinemark_seatmap.html"))
+
+
+def test_cinemark_fixture_parses_in_dom_order():
+    res = _cinemark()
     assert res.ok
-    assert [r.raw_label for r in res.rows] == list("ABCDEFGH")
-    # Row H (DOM index 7) has 5 available then a companion (unavailable).
-    assert res.rows[-1].seats_available == [True, True, True, True, True, False]
+    assert [r.raw_label for r in res.rows] == ["A", "B", "C"]
 
 
-def test_space_breaks_contiguity():
-    res = parse_seat_html("amc", _fixture("amc_seatmap.html"))
-    # Row A: sold, sold, SPACE, available, sold -> the space is a False gap.
+def test_blank_position_breaks_contiguity():
+    res = _cinemark()
+    # Row A: A20 sold, A19 sold, .seatBlank gap, A18 open, A17 sold.
     assert res.rows[0].seats_available == [False, False, False, True, False]
 
 
-def test_companion_and_sold_are_unavailable():
-    res = parse_seat_html("amc", _fixture("amc_seatmap.html"))
-    assert res.stats["available_found"] == 15
-    assert res.stats["seats_found"] == 26
+def test_available_attribute_drives_state():
+    res = _cinemark()
+    assert res.rows[1].seats_available == [True, False, True]
+
+
+def test_wheelchair_and_companion_positions_are_gaps():
+    """They are not general seating, so they must not extend a contiguous run."""
+    res = _cinemark()
+    # Row C: five real open seats, then wheelchair + companion as gaps.
+    assert res.rows[2].seats_available == [True, True, True, True, True, False, False]
+
+
+def test_stats_count_only_real_seats():
+    res = _cinemark()
+    assert res.stats["seats_found"] == 12  # 4 + 3 + 5, gaps excluded
+    assert res.stats["available_found"] == 8  # 1 + 2 + 5
 
 
 def test_canvas_rendering_is_check_manually_not_a_guess():
-    html = '<div class="seatMapContainer"><canvas id="seatmap"></canvas></div>'
-    res = parse_seat_html("amc", html)
+    res = parse_seat_html("cinemark", '<div id="map"><canvas id="seatmap"></canvas></div>')
     assert res.rows is None
     assert "canvas" in res.reason.lower()
 
 
 def test_login_wall_by_text():
-    html = '<div class="seatMapRow"><p>Please sign in to continue to seat selection.</p></div>'
-    res = parse_seat_html("amc", html)
+    res = parse_seat_html(
+        "cinemark", '<div class="seatRow"><p>Please sign in to select seats.</p></div>'
+    )
     assert res.rows is None
     assert "wall" in res.reason.lower()
 
 
 def test_login_wall_by_selector():
-    html = '<div class="authWall">Members only</div>'
-    res = parse_seat_html("amc", html)
+    res = parse_seat_html("cinemark", '<div class="sign-in-required">Members only</div>')
     assert res.rows is None
     assert "wall" in res.reason.lower()
 
 
 def test_unrecognized_status_declines_rather_than_guessing():
-    # Seats exist but carry a status value the config doesn't know -> decline.
+    # Seats exist but carry an availability value the config doesn't know.
     html = (
-        '<div class="seatMapRow" data-row-name="A">'
-        '<div class="seat" data-seat-status="mysterystate"></div>'
-        '<div class="seat" data-seat-status="mysterystate"></div>'
+        '<div class="seatRow">'
+        '<button available="mysterystate" seattype="seat"></button>'
+        '<button available="mysterystate" seattype="seat"></button>'
         "</div>"
     )
-    res = parse_seat_html("amc", html)
+    res = parse_seat_html("cinemark", html)
     assert res.rows is None
     assert "availability" in res.reason.lower()
 
 
-def test_flat_layout_grouped_by_row_attr():
-    # No row containers; seats carry data-row-name. Regal config groups them.
-    html = (
-        '<div id="map">'
-        '<span class="seat" data-row="1" data-status="available"></span>'
-        '<span class="seat" data-row="1" data-status="taken"></span>'
-        '<span class="seat" data-row="2" data-status="available"></span>'
-        '<span class="seat" data-row="2" data-status="available"></span>'
-        "</div>"
-    )
-    res = parse_seat_html("regal", html)
-    assert res.ok
-    assert [r.raw_label for r in res.rows] == ["1", "2"]
-    assert res.rows[1].seats_available == [True, True]
+def test_no_seats_found_declines():
+    res = parse_seat_html("cinemark", "<div id='map'><p>Nothing here</p></div>")
+    assert res.rows is None
+    assert "no seat elements" in res.reason.lower()
 
 
-def test_regal_fixture_parses_with_aisle_gap():
-    res = parse_seat_html("regal", _fixture("regal_seatmap.html"))
-    assert res.ok
-    assert [r.raw_label for r in res.rows] == ["AA", "BB", "CC", "DD", "EE", "FF", "GG"]
-    # Row BB: available, sold, AISLE, available -> aisle breaks the run.
-    assert res.rows[1].seats_available == [True, False, False, True]
-    # Row FF (physical row 6) holds a clean 4-block.
-    assert res.rows[5].seats_available == [True, True, True, True, False]
-
-
-def test_cinemark_fixture_numeric_rows():
-    res = parse_seat_html("cinemark", _fixture("cinemark_seatmap.html"))
-    assert res.ok
-    assert [r.raw_label for r in res.rows] == list("1234567")
-    # Row 7 (physical row 7) is fully open with 5 seats.
-    assert res.rows[6].seats_available == [True, True, True, True, True]
+def test_amc_is_not_handled_by_the_dom_engine():
+    """AMC uses the geometry strategy; its config intentionally has no selectors."""
+    res = parse_seat_html("amc", '<div class="seatRow"><button available="True"></button></div>')
+    assert res.rows is None
 
 
 def test_unknown_chain_has_no_selectors():
@@ -106,5 +104,5 @@ def test_unknown_chain_has_no_selectors():
 
 
 def test_empty_html():
-    res = parse_seat_html("amc", "")
+    res = parse_seat_html("cinemark", "")
     assert res.rows is None
