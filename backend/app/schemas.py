@@ -57,6 +57,22 @@ class SeatCheck(BaseModel):
     reason: Optional[str] = None  # why "check_manually" (canvas, login wall...)
 
 
+class ShowtimeLinks(BaseModel):
+    """Where the user can actually go for this showtime.
+
+    ``chain`` is the chain's own page for this theatre and date (deterministic);
+    ``fandango`` is a cross-chain search fallback; ``search`` is the provider's
+    original google.com link, kept because it occasionally knows about an unusual
+    venue. ``best`` is the one to use for a plain "open this" action.
+    """
+
+    best: Optional[str] = None
+    chain: Optional[str] = None
+    chain_label: Optional[str] = None
+    fandango: Optional[str] = None
+    search: Optional[str] = None
+
+
 class Showtime(BaseModel):
     key: str  # stable id for diffing (theater+movie+datetime+format)
     theater_id: str
@@ -69,6 +85,7 @@ class Showtime(BaseModel):
     start_datetime: datetime
     start_time_label: str  # "7:15 PM"
     booking_url: Optional[str] = None
+    links: ShowtimeLinks = Field(default_factory=ShowtimeLinks)
     seat_check: SeatCheck
     is_new: bool = False  # set on saved-search re-run diff
 
