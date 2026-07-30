@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!--
+  Trimmed copy of Regal's real theatre-listing markup, verified live on
+  2026-07-29 (regal-hacienda-crossings-0347?date=08-01-2026 returned 107
+  showtimes, 7 of them sold out).
+
+  Regal's SEAT page is CAPTCHA-gated, but this listing is reachable and publishes
+  sold-out state semantically:
+      <button disabled aria-label="10:30pm showtime, sold out">
+  Showtimes must be attributed to a film via the nearest ancestor containing a
+  /movies/<slug> link — the CSS classes are generated emotion hashes (reproduced
+  here so nothing accidentally depends on them), and one listing carries many
+  movies at overlapping times.
+-->
+<html><head><title>Regal Hacienda Crossings Movie Tickets and Showtimes | Regal</title></head>
+<body>
+  <div class="css-0 esve45v4">
+    <div class="css-1xvfeds ebso77s13">
+      <a href="/movies/the-odyssey-ho00019072"><h3>The Odyssey</h3></a>
+      <ul class="css-1whoi2u ebso77s29">
+        <li class="css-hbdqub ebso77s30">
+          <button class="css-10hji7c ebso77s31" aria-label="7:30pm showtime">7:30pm</button>
+        </li>
+        <li class="css-hbdqub ebso77s30">
+          <button class="css-10hji7c ebso77s31" aria-label="9:30pm showtime">9:30pm</button>
+        </li>
+        <li class="css-hbdqub ebso77s30">
+          <button class="css-10hji7c ebso77s31" disabled
+                  aria-label="10:30pm showtime, sold out">10:30pm<span>Sold Out</span></button>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- A different film at an overlapping time: must NOT be confused with the above. -->
+  <div class="css-0 esve45v4">
+    <div class="css-1xvfeds ebso77s13">
+      <a href="/movies/spiderman-brand-new-day-ho000212"><h3>Spider-Man: Brand New Day</h3></a>
+      <ul class="css-1whoi2u ebso77s29">
+        <li class="css-hbdqub ebso77s30">
+          <button class="css-10hji7c ebso77s31" disabled
+                  aria-label="7:30pm showtime, sold out">7:30pm<span>Sold Out</span></button>
+        </li>
+        <li class="css-hbdqub ebso77s30">
+          <button class="css-10hji7c ebso77s31" aria-label="10:30pm showtime">10:30pm</button>
+        </li>
+      </ul>
+    </div>
+  </div>
+</body></html>
