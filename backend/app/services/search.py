@@ -31,10 +31,24 @@ _PROVIDERS = [SerpApiProvider, MovieGluProvider, ScraperProvider, DemoProvider]
 _search_cache: dict[str, tuple[float, SearchResponse]] = {}
 
 
+def _requested_formats(req: SearchRequest) -> list[str]:
+    selected = req.formats or [req.format]
+    cleaned = [f.strip() for f in selected if f and f.strip()]
+    if not cleaned or any(f.lower() == "any" for f in cleaned):
+        return []
+    return list(dict.fromkeys(cleaned))
+
+
+def _format_matches_any(actual: str, requested: list[str]) -> bool:
+    return not requested or actual.lower() in {f.lower() for f in requested}
+
+
 def _cache_key(req: SearchRequest, start: date, end: date) -> str:
+    formats = _requested_formats(req)
     raw = "|".join(
         str(x) for x in (
-            req.movie_title.strip().lower(), req.format.lower(), req.location.strip().lower(),
+            req.movie_title.strip().lower(), ",".join(sorted(f.lower() for f in formats)),
+            req.location.strip().lower(),
             req.radius_miles, start, end, req.time_rule.weekday_cutoff,
             req.time_rule.weekends_unrestricted, req.seats_together, req.min_row,
         )
@@ -103,6 +117,7 @@ def _showtime_key(theater_name: str, movie: str, dt: datetime, fmt: str) -> str:
 
 async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchResponse:
     start, end = _apply_date_defaults(req)
+    requested_formats = _requested_formats(req)
 
     ttl = get_settings().search_cache_ttl_sec
     cache_key = _cache_key(req, start, end)
@@ -117,12 +132,13 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
     # Distance/format prefilter from our theater list (used for radius filtering
     # and to know which theaters to hand a scraper).
-    candidates = candidate_theaters(req.location, req.radius_miles, req.format)
+    candidates = candidate_theaters(req.location, req.radius_miles, requested_formats)
     dist_by_theater_id = {t.id: d for t, d in candidates}
 
     query = ProviderQuery(
         movie_title=req.movie_title,
-        fmt=req.format,
+        # Fetch all formats once, then apply the multi-select OR filter below.
+        fmt="Any",
         location=req.location,
         date_from=start,
         date_to=end,
@@ -147,11 +163,22 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
         notes.append(f"Provider {provider.name} returned no rows; falling back.")
 
     if provider_used == "serpapi" and not raw:
-        notes.append(
-            "SerpApi is configured but returned no showtimes for this query. Check "
-            "that SERPAPI_KEY is valid, that the movie is currently in theaters, and "
-            "try a city/state location (e.g. 'San Jose, California') rather than a bare ZIP."
-        )
+        if not candidates:
+            notes.append(
+                "No theaters matched this location, radius and format combination, so "
+                "there was nothing to look up. Widen the radius, loosen the format "
+                "filter, or add theaters to theaters.json."
+            )
+        else:
+            looked_up = ", ".join(t.name for t, _ in candidates)
+            notes.append(
+                f"SerpApi found no '{req.movie_title}' showtimes at the "
+                f"{len(candidates)} theater(s) in range ({looked_up}) for the selected "
+                "dates. Most often the title doesn't match Google's exactly or the "
+                "movie isn't playing there — check the spelling and the date range. "
+                "If this persists, confirm your SERPAPI_KEY still has quota at "
+                "serpapi.com/account."
+            )
     if provider_used == "demo":
         notes.append(
             "Showing DEMO data (synthetic showtimes) because no provider is "
@@ -165,6 +192,8 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
     showtimes: list[Showtime] = []
     for st in raw:
+        if not _format_matches_any(st.format, requested_formats):
+            continue
         # Time-of-day / day-of-week rule.
         if not _passes_time_rule(st.start_datetime, cutoff, req.time_rule.weekends_unrestricted):
             continue
