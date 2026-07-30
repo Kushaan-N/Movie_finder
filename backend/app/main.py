@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -148,6 +149,75 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
                 )
             )
     return VerifySeatsResponse(available=True, seat_check=check, grid=grid, stats=result.stats, reason=result.reason)
+
+
+@app.get("/api/seat-bookmarklet")
+def seat_bookmarklet(app_url: str = "http://localhost:5173") -> dict:
+    """The bookmarklet the user drags to their bookmarks bar.
+
+    ``app_url`` is where the extracted grid is handed back; it must be this app's
+    own origin so the browser can navigate to it with the payload in the fragment.
+    """
+    from .scrape.bookmarklet import FRAGMENT_KEY, build_href
+
+    href = build_href(app_url)
+    return {
+        "href": href,
+        "fragment_key": FRAGMENT_KEY,
+        "bytes": len(href),
+        "how_to": [
+            "Drag the 'Check seats' link onto your bookmarks bar (or bookmark this href).",
+            "In the app, click a showtime's booking link to open the chain's site.",
+            "Go to that showtime's seat-selection step and wait for the seats to draw.",
+            "Click the bookmarklet. The grid is read from the page you are looking at "
+            "and handed back to the app, which applies your seats-together and "
+            "minimum-row rules.",
+        ],
+        "why": (
+            "Works for every chain, including ones the server cannot read: Regal's "
+            "seat page is behind a CAPTCHA and Cinemark's robots.txt disallows "
+            "theirs, but neither restriction applies to your own browsing."
+        ),
+    }
+
+
+@app.get("/api/seat-bookmarklet/setup", response_class=HTMLResponse)
+def seat_bookmarklet_setup(app_url: str = "http://localhost:5173") -> str:
+    """A tiny page whose only job is to offer a draggable bookmarklet link.
+
+    A bookmarklet cannot be installed programmatically, and an anchor's href can't
+    be set from JSON by the SPA without the browser stripping the javascript: URL,
+    so it is served as real HTML here.
+    """
+    from html import escape
+
+    from .scrape.bookmarklet import build_href
+
+    href = build_href(app_url)
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>showtime-finder — seat-check bookmarklet</title>
+<style>
+ body{{font:15px/1.55 system-ui,sans-serif;max-width:44rem;margin:3rem auto;padding:0 1rem;
+      background:#0b1020;color:#e6e8ef}}
+ a.bm{{display:inline-block;padding:.6rem 1rem;border-radius:.5rem;background:#5b6cff;
+       color:#fff;font-weight:600;text-decoration:none}}
+ code{{background:#171c2e;padding:.1rem .35rem;border-radius:.25rem}}
+ ol{{padding-left:1.2rem}} li{{margin:.4rem 0}} .muted{{color:#9aa3b8}}
+</style></head><body>
+<h1>Seat-check bookmarklet</h1>
+<p>Drag this onto your bookmarks bar:</p>
+<p><a class="bm" href="{escape(href, quote=True)}">Check seats</a></p>
+<ol>
+ <li>In showtime-finder, open a showtime's booking link.</li>
+ <li>Navigate to that showtime's <b>seat selection</b> step and let the seats draw.</li>
+ <li>Click <b>Check seats</b>. The grid is read from the page in front of you and
+     handed back to the app at <code>{escape(app_url)}</code>.</li>
+</ol>
+<p class="muted">This reads only the page you already have open. It works for every
+chain — including Regal, whose seat page is behind a CAPTCHA, and Cinemark, whose
+robots.txt disallows server-side access — because neither applies to your own
+browsing. The grid is also copied to your clipboard as a fallback.</p>
+</body></html>"""
 
 
 @app.post("/api/verify-seats/from-grid", response_model=VerifySeatsResponse)
