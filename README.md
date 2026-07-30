@@ -193,6 +193,28 @@ at all. This is the honest state, not a to-do list:
 the other is the site's stated crawling policy. Both are reported as such — the UI
 gets the actual reason, never a vague failure.
 
+### Licensed / official APIs were evaluated first, and don't cover this
+
+Investigated on 2026-07-29 before building anything, because an official feed would
+beat scraping outright:
+
+| Source | Verdict |
+|---|---|
+| **MovieGlu** (already scaffolded here) | No seat data of any kind. Its own docs state cinemas "do not make booking APIs available externally". 13 endpoints, none seating-related. |
+| **AMC official Seating API** (`developers.amctheatres.com`, vendor-key) | Real and public, but `SeatRepresentation` carries only `row`, `seatName`, `column`, `type`, `seatTier` — **layout, not availability**. An error code `7008 GetUnavailableSeatsError` hints availability exists at a higher access tier; it is not in the public spec. Its 15 other APIs (order, showtime, theatre…) model no seat status either. |
+| **Vista Connect** (`GetSessionSeatData`, returns sold/unsold) | The right shape, but Cinemark isn't on it (404 on the Vista paths) and Regal doesn't expose it. |
+| **Regal's own frontend API** | Calls only `/api/theatreCurfews`. No seat endpoint. |
+
+So there is no licensed path to seat availability for these chains. The AMC layout
+API is still worth a vendor key if you want exact row/seat labels to cross-check
+row normalization — but it cannot tell you what's free.
+
+### Getting the exact map anyway: browser-assisted checking
+
+Because *your own browsing* is not automated crawling, and a CAPTCHA is no obstacle
+when a human is present, the one approach that works for all three chains is to read
+the seat map from a page **you** opened. See "Browser-assisted seat check" below.
+
 ### How a showtime becomes a seat map
 
 A provider's `link` is a `google.com/search` URL, not a seat page, so the seat URL
