@@ -1,64 +1,76 @@
 {
-  "_comment": "Per-chain CSS selectors for parsing seat maps out of rendered HTML. These are HAND-EDITABLE and MUST be verified/tuned against a real saved page — chain markup changes over time and differs by theater. Use the debug harness to check them offline:  python -m app.scrape.debug amc /path/to/saved_seatmap.html  (see backend/app/scrape/debug.py). The parser reads row containers top-to-bottom in DOM order (= physical position, closest to screen first), so even if labels are wrong the ordering feeds rows.py correctly.",
-
+  "_comment": "Per-chain seat-map extraction config. Every value below was verified against a LIVE seat page on 2026-07-29 (see each chain's `verified` note) rather than guessed. Two strategies exist: `dom` parses rendered HTML with the CSS selectors here (offline-testable via  python -m app.scrape.debug <chain> saved.html ), while `geometry` needs a live browser because seat identity comes from layout geometry and resolved SVG gradients, not from attributes. A chain may also be marked `blocked`, meaning automated verification is impossible and we say so instead of pretending.",
   "default_available_is_default": false,
-
   "chains": {
-    "amc": {
-      "note": "AMC's seat-selection page is a JS-rendered SPA. These selectors are plausible defaults covering a few markup generations; verify against a saved page. If AMC renders seats to <canvas>, the parser returns 'check manually' (never a guess).",
-      "row_selector": ".seatMapRow, [data-row-index], [data-row-name], .SeatMap__row, .seat-row",
-      "seat_selector": ".seat, [data-seat-number], [data-seat-id], .SeatMap__seat",
-      "row_label_attr": "data-row-name",
-      "row_label_selector": ".rowLabel, .SeatMap__rowLabel, .seat-row-label",
-      "seat_row_attr": "data-row-name",
-      "available_attr": "data-seat-status",
-      "available_values": ["available", "open", "unsold", "sellable"],
-      "unavailable_values": ["unavailable", "taken", "sold", "occupied", "held", "broken", "companion"],
-      "available_class_any": ["seat--available", "isAvailable", "is-available", "available", "seatAvailable"],
-      "unavailable_class_any": ["seat--unavailable", "seat--sold", "isTaken", "isSold", "unavailable", "taken", "sold", "occupied", "seatSold"],
-      "ignore_class_any": ["seat--space", "isSpace", "aisle", "spacer", "blank", "seatSpace"],
-      "available_is_default": false,
-      "canvas_selector": "canvas",
-      "login_wall_selector": "[data-signin-required], .signInRequired, .authWall, .sign-in-gate",
-      "login_wall_text": ["sign in to select", "log in to choose your seats", "please sign in to continue", "sign in to reserve"]
-    },
-
-    "regal": {
-      "note": "STUB — mixed markup that varies by theater. Verify with the debug harness before trusting. Falls back to DOM order for physical position.",
-      "row_selector": "[data-row], .seat-row, .row",
-      "seat_selector": "[data-seat], .seat",
-      "row_label_attr": "data-row",
-      "row_label_selector": ".row-label",
-      "seat_row_attr": "data-row",
-      "available_attr": "data-status",
-      "available_values": ["available", "open"],
-      "unavailable_values": ["unavailable", "taken", "sold", "occupied"],
-      "available_class_any": ["available", "seat--available"],
-      "unavailable_class_any": ["unavailable", "taken", "sold", "occupied"],
-      "ignore_class_any": ["aisle", "space", "spacer", "blank"],
-      "available_is_default": false,
-      "canvas_selector": "canvas",
-      "login_wall_selector": ".sign-in-required",
-      "login_wall_text": ["sign in to select seats"]
-    },
-
     "cinemark": {
-      "note": "STUB — Cinemark/Century/Tinseltown. Verify with the debug harness. Numeric row labels typical; DOM order used as the safe physical position.",
-      "row_selector": "[data-row-number], .seat-row, .row",
-      "seat_selector": "[data-seat-number], .seat",
-      "row_label_attr": "data-row-number",
-      "row_label_selector": ".row-number",
-      "seat_row_attr": "data-row-number",
-      "available_attr": "data-availability",
-      "available_values": ["available", "open"],
-      "unavailable_values": ["unavailable", "taken", "sold", "occupied"],
-      "available_class_any": ["available", "seat-available"],
-      "unavailable_class_any": ["unavailable", "taken", "sold", "occupied", "seat-taken"],
-      "ignore_class_any": ["aisle", "space", "spacer", "blank"],
+      "strategy": "dom",
+      "verified": "2026-07-29 against /TicketSeatMap/ at Century Oakridge (TheaterId=477). Clean, explicit contract: 12 .seatRow containers, 199 button[available] seats, available=True|False, seattype=seat|companion|wheelchair, labels in .seatDesignation (e.g. 'A20'). Wait for .seat-placeholder.loading to clear before reading.",
+      "row_selector": ".seatRow",
+      "seat_selector": "button[available], .seatBlock",
+      "row_label_attr": null,
+      "row_label_selector": ".rowDesignation",
+      "seat_label_selector": ".seatDesignation",
+      "seat_row_attr": null,
+      "available_attr": "available",
+      "available_values": [
+        "true"
+      ],
+      "unavailable_values": [
+        "false"
+      ],
+      "available_class_any": [
+        "seatavailable"
+      ],
+      "unavailable_class_any": [
+        "seatunavailable"
+      ],
+      "ignore_class_any": [
+        "seatblank",
+        "companionavailable",
+        "wheelchairavailable",
+        "seat-placeholder"
+      ],
       "available_is_default": false,
+      "loading_selector": ".seat-placeholder.loading",
       "canvas_selector": "canvas",
       "login_wall_selector": ".sign-in-required",
-      "login_wall_text": ["sign in to select seats"]
+      "login_wall_text": [
+        "sign in to select seats"
+      ]
+    },
+    "amc": {
+      "strategy": "geometry",
+      "verified": "2026-07-29 against /showtimes/<id>/seats at AMC Metreon 16. No login required, but the whole site sits behind a Queue-it waiting room (clears in ~15s). canvas: 0, svg: 198, and ZERO <text> elements \u2014 seat labels are SVG <path> glyph outlines, so labels are unreadable and CSS selectors match nothing. Seats are small <svg> boxes; clustering 196 of them by y produced 15 clean rows, and availability comes from the resolved gradient stop-colors below (45 available / 137 occupied, confirmed against a screenshot).",
+      "seat_min_px": 8,
+      "seat_max_px": 80,
+      "row_tolerance_px": 12,
+      "available_stop_colors": [
+        "#555aaa",
+        "#2a1f63"
+      ],
+      "occupied_stop_colors": [
+        "transparent"
+      ],
+      "ignore_stop_colors": [
+        "none",
+        "#fff",
+        "#ffffff",
+        "currentcolor"
+      ],
+      "min_seats_expected": 20,
+      "queue_url_substring": "queue.amctheatres.com",
+      "queue_max_wait_sec": 45,
+      "login_wall_text": [
+        "sign in to select",
+        "sign in to reserve"
+      ],
+      "seat_wait_max_sec": 20,
+      "note_render_race": "The seat SVGs paint AFTER load-state events settle, so extraction polls until at least min_seats_expected seats exist. Evaluating on 'networkidle' alone intermittently returned 0 seats, which is indistinguishable from 'markup changed'."
+    },
+    "regal": {
+      "strategy": "blocked",
+      "verified": "2026-07-29. Theatre pages and showtime buttons are readable (showtime URL is /movies/<slug>?site=<theatreId>&id=<showtimeId>&date=MM-DD-YYYY, and sold-out showings are marked disabled), but the seat-selection page itself presents a Cloudflare Turnstile 'Verify you are human' challenge. Solving or bypassing a CAPTCHA is out of bounds, so seat verification cannot be automated for Regal.",
+      "blocked_reason": "Regal gates seat selection behind a Cloudflare CAPTCHA; seats must be checked manually."
     }
   }
 }
