@@ -35,6 +35,10 @@ class SeatMapParseResult:
     rows: Optional[list[SeatMapRow]]
     reason: Optional[str] = None
     stats: dict = field(default_factory=dict)
+    # Set when a chain publishes that a showtime is sold out. That answers the
+    # seat question definitively without a seat map — no seats at all means no N
+    # together — so it is carried separately rather than faked as an empty map.
+    sold_out: bool = False
 
     @property
     def ok(self) -> bool:
