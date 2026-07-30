@@ -275,18 +275,24 @@
     }
     if (!labels.length || !swatches.length) return null;
 
-    // The swatch is the nearest painted box on the label's own line, to its left.
+    // The swatch is the nearest painted box on the label's own line. Both layouts
+    // occur: a sibling immediately before the text (AMC) and one nested inside the
+    // label element, which puts it to the RIGHT of the label's left edge. So the
+    // window spans both directions and the closest wins — that also keeps a legend
+    // entry from stealing its neighbour's swatch, since its own is always nearer.
     var out = { avail: [], taken: [] };
     for (var L = 0; L < labels.length; L++) {
-      var lab = labels[L], best = null, bestD = 90;
+      var lab = labels[L], best = null, bestD = Infinity;
       for (var j = 0; j < swatches.length; j++) {
         var sw = swatches[j];
         if (Math.abs(sw.y - lab.y) > 14) continue;
         var dx = lab.x - sw.right;
-        if (dx < -4 || dx > bestD) continue;
+        if (dx < -60 || dx > 90) continue;
+        var d = Math.abs(dx);
+        if (d >= bestD) continue;
         var p = paintOf(sw.el);
         if (!p || !p.rgb) continue;
-        bestD = dx; best = p.rgb;
+        bestD = d; best = p.rgb;
       }
       if (best) out[lab.kind].push(best);
     }
@@ -452,30 +458,48 @@
     { name: 'paint', fn: readPaint, decide: decidePaint }
   ];
   var tried = {};
+  var viable = [];
   for (var a = 0; a < attempts.length; a++) {
     var rows = toRows(attempts[a].fn(cands));
     if (attempts[a].decide && rows.length && !attempts[a].decide(rows)) {
       tried[attempts[a].name] = { seats: 0, rows: 0, undecidable: true };
       continue;
     }
-    var s = score(rows);
+    var s = score(rows), avail = 0;
+    for (var i = 0; i < rows.length; i++)
+      for (var j = 0; j < rows[i].length; j++) if (rows[i][j].available) avail++;
+    s.available = avail;
+    // Did this strategy actually distinguish two states, or did it paint every
+    // seat the same? A uniform answer usually means the signal isn't there — most
+    // dangerously "everything is free", e.g. a map where selection is JS-driven so
+    // no seat carries `disabled`. Real all-free and sold-out auditoriums exist, so
+    // this is a preference, not a veto.
+    s.discriminates = avail > 0 && avail < s.seats;
     tried[attempts[a].name] = s;
     if (s.seats >= MIN_SEATS && s.rows >= MIN_ROWS) {
-      var avail = 0;
-      for (var i = 0; i < rows.length; i++)
-        for (var j = 0; j < rows[i].length; j++) if (rows[i][j].available) avail++;
-      return {
-        ok: true,
-        strategy: attempts[a].name,
-        rows: rows,
-        stats: {
-          seats_found: s.seats, rows_found: s.rows, available_found: avail,
-          candidates: cands.length, tried: tried, colour_source: lastPaintSource
-        },
-        url: location.href,
-        title: document.title
-      };
+      viable.push({ name: attempts[a].name, rows: rows, s: s, colour: lastPaintSource });
     }
+  }
+
+  // Prefer, in order: a strategy that distinguished two states, then any that met
+  // the size thresholds. Within each group the earlier (more trustworthy) wins.
+  var chosen = null;
+  for (var v = 0; v < viable.length; v++) if (viable[v].s.discriminates) { chosen = viable[v]; break; }
+  if (!chosen && viable.length) chosen = viable[0];
+
+  if (chosen) {
+    return {
+      ok: true,
+      strategy: chosen.name,
+      rows: chosen.rows,
+      stats: {
+        seats_found: chosen.s.seats, rows_found: chosen.s.rows,
+        available_found: chosen.s.available, uniform: !chosen.s.discriminates,
+        candidates: cands.length, tried: tried, colour_source: chosen.colour
+      },
+      url: location.href,
+      title: document.title
+    };
   }
   return {
     ok: false,
