@@ -35,7 +35,8 @@ export default function SavedSearches({ items, onRun, onDelete, onLoad, activeId
               <div className="truncate text-sm font-medium">{s.name}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span className="truncate">
-                  {s.config.movie_title || "any movie"} · {s.config.format} ·{" "}
+                  {s.config.movie_title || "any movie"} ·{" "}
+                  {(s.config.formats?.length ? s.config.formats : [s.config.format || "Any"]).join(", ")} ·{" "}
                   {s.config.seats_together} together · row {s.config.min_row}+
                 </span>
               </div>
