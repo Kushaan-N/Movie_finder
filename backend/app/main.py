@@ -14,6 +14,7 @@ from .config import get_settings
 from .database import get_db, init_db
 from .models import LOCAL_USER_ID, SavedSearch, User
 from .schemas import (
+    GridSeatCheckRequest,
     SavedSearchCreate,
     SavedSearchOut,
     SavedSearchRunResponse,
@@ -147,6 +148,56 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
                 )
             )
     return VerifySeatsResponse(available=True, seat_check=check, grid=grid, stats=result.stats, reason=result.reason)
+
+
+@app.post("/api/verify-seats/from-grid", response_model=VerifySeatsResponse)
+def verify_seats_from_grid(req: GridSeatCheckRequest) -> VerifySeatsResponse:
+    """Run the seat check against a map the user read in their own browser.
+
+    This is the path that works for every chain. It needs no scraping, no
+    credentials and no CAPTCHA: the bookmarklet reads the page the user already
+    has open and hands the grid here, where the same evaluate_rows/normalize_row
+    logic used by the automated path turns it into a verdict.
+    """
+    from .providers.base import SeatMapRow
+    from .rows import normalize_row
+    from .services.seatcheck import evaluate_rows
+
+    rows: list[SeatMapRow] = []
+    for line in req.rows:
+        seats = [ch == "O" for ch in line]
+        if seats:
+            # Labels aren't recoverable from a rendered map, and don't need to be:
+            # screen-first order IS the physical position min_row is defined on.
+            rows.append(SeatMapRow(raw_label=None, seats_available=seats))
+    if not rows:
+        raise HTTPException(status_code=400, detail="No seat rows in payload")
+
+    check = evaluate_rows(rows, req.chain, req.theater_id, req.seats_together, req.min_row)
+    grid = [
+        SeatGridRow(
+            physical_row=normalize_row(
+                req.chain, None, dom_order_index=idx, theater_id=req.theater_id
+            ).physical_row,
+            raw_label=None,
+            seats_available=row.seats_available,
+        )
+        for idx, row in enumerate(rows)
+    ]
+    total = sum(len(r.seats_available) for r in rows)
+    return VerifySeatsResponse(
+        available=True,
+        seat_check=check,
+        grid=grid,
+        stats={
+            "seats_found": total,
+            "available_found": sum(sum(r.seats_available) for r in rows),
+            "rows_found": len(rows),
+            "strategy": req.strategy,
+            "source": "browser",
+            "source_url": req.source_url,
+        },
+    )
 
 
 # --------------------------------------------------------------------------- #
