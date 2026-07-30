@@ -11,6 +11,8 @@ tested rather than bypassed:
   * ``/TicketSeatMap/``        -> Cinemark seat map (dom strategy)
   * ``/amc-listing``           -> AMC showtimes page (links to /showtimes/<id>)
   * ``/showtimes/<id>/seats``  -> AMC SVG seat map (geometry strategy)
+  * ``/regal-listing``         -> Regal theatre page (sold-out state only; its
+                                  seat page is CAPTCHA-gated and unreachable)
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ _EXACT = {
     "/cinemark-listing": "cinemark_listing.html",
     "/TicketSeatMap/": "cinemark_seatmap.html",
     "/amc-listing": "amc_listing.html",
+    "/regal-listing": "regal_listing.html",
 }
 
 # /showtimes/<numeric id>/seats -> AMC's SVG-based map.
