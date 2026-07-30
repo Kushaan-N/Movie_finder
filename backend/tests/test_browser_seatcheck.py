@@ -164,3 +164,45 @@ def test_handoff_payload_round_trips():
     d = _post(revived["rows"], strategy=revived["strategy"],
               source_url=revived["source_url"])
     assert d["stats"]["available_found"] == 45
+
+
+# --- config actually reaching the extractor ---------------------------------- #
+
+def test_config_keys_are_translated_to_extractor_options():
+    """scrape_selectors.json is snake_case; the extractor's options are camelCase.
+
+    They used to be passed through untranslated, so no tuning value reached the
+    extractor and it silently used its own defaults -- editing the config did
+    nothing, which is worse than the config not existing.
+    """
+    from app.scrape.extract import extractor_options
+
+    opts = extractor_options({
+        "seat_min_px": 5, "seat_max_px": 90, "row_tolerance_px": 20,
+        "min_seats_expected": 30, "min_row_width": 6, "aisle_gap_factor": 2.5,
+        "strategy": "geometry", "login_wall_text": ["x"],   # not extractor options
+    })
+    assert opts == {
+        "seatMinPx": 5, "seatMaxPx": 90, "rowTolerancePx": 20,
+        "minSeats": 30, "minRowWidth": 6, "aisleGapFactor": 2.5,
+    }
+
+
+def test_call_expression_embeds_the_translated_options():
+    from app.scrape.extract import call_expression
+
+    expr = call_expression({"min_seats_expected": 42})
+    assert '"minSeats": 42' in expr
+    assert "min_seats_expected" not in expr
+    # A parenthesised expression immediately invoked with the options.
+    assert expr.startswith("(") and expr.rstrip().endswith('({"minSeats": 42})')
+
+
+def test_the_live_amc_config_translates_to_something_usable():
+    """A guard against renaming a config key and silently losing it."""
+    from app.scrape.extract import extractor_options
+    from app.scrape.seatmap import _chain_cfg
+
+    opts = extractor_options(_chain_cfg("amc") or {})
+    assert opts.get("minSeats"), "AMC's min_seats_expected no longer reaches the extractor"
+    assert opts.get("seatMinPx") and opts.get("seatMaxPx")
