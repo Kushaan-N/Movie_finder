@@ -117,6 +117,9 @@ class VerifySeatsRequest(BaseModel):
     # for verification: providers hand back google.com search links, not seat pages.
     start_datetime: datetime
     booking_url: Optional[str] = None
+    # Needed to attribute a showtime to the right film on a chain listing that
+    # carries many movies (used by the sold-out capacity path).
+    movie_title: Optional[str] = None
     seats_together: int = Field(default=4, ge=1, le=20)
     min_row: int = Field(default=5, ge=1, le=60)
 
