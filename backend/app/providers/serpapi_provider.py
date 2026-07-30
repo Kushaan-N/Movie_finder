@@ -35,6 +35,7 @@ from datetime import date, datetime, timedelta
 import httpx
 
 from ..config import get_settings
+from ..formats import format_matches
 from .base import ProviderQuery, ProviderShowtime, ShowtimeProvider
 
 logger = logging.getLogger("showtime_finder.serpapi")
@@ -324,6 +325,5 @@ class SerpApiProvider(ShowtimeProvider):
 
     @staticmethod
     def _format_matches(requested: str, actual: str) -> bool:
-        if not requested or requested.lower() in ("any", ""):
-            return True
-        return requested.lower() == actual.lower()
+        # Hierarchical: "IMAX" accepts "70mm IMAX". See app.formats.
+        return format_matches(requested, actual)
