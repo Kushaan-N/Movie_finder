@@ -96,7 +96,7 @@ export function Badge({ className, tone = "default", ...props }) {
   );
 }
 
-export function Stepper({ value, onChange, min = 1, max = 99, id }) {
+export function Stepper({ value, onChange, min = 1, max = 99, id, label }) {
   const set = (v) => onChange(Math.max(min, Math.min(max, v)));
   return (
     <div className="inline-flex h-10 items-stretch overflow-hidden rounded-md border border-input">
@@ -104,13 +104,14 @@ export function Stepper({ value, onChange, min = 1, max = 99, id }) {
         type="button"
         onClick={() => set(Number(value) - 1)}
         className="w-10 bg-muted/50 text-lg hover:bg-muted"
-        aria-label="decrease"
+        aria-label={label ? `Decrease ${label}` : "decrease"}
       >
         −
       </button>
       <input
         id={id}
         type="number"
+        aria-label={label}
         value={value}
         min={min}
         max={max}
@@ -121,7 +122,7 @@ export function Stepper({ value, onChange, min = 1, max = 99, id }) {
         type="button"
         onClick={() => set(Number(value) + 1)}
         className="w-10 bg-muted/50 text-lg hover:bg-muted"
-        aria-label="increase"
+        aria-label={label ? `Increase ${label}` : "increase"}
       >
         +
       </button>
@@ -129,12 +130,13 @@ export function Stepper({ value, onChange, min = 1, max = 99, id }) {
   );
 }
 
-export function Switch({ checked, onChange, id }) {
+export function Switch({ checked, onChange, id, "aria-label": ariaLabel }) {
   return (
     <button
       type="button"
       id={id}
       role="switch"
+      aria-label={ariaLabel}
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={cn(
