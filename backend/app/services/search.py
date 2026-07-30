@@ -9,12 +9,19 @@ from datetime import date, datetime, time, timedelta
 
 from ..config import get_settings
 from ..formats import format_matches_any
+from ..links import build as build_links
 from ..providers.base import ProviderQuery, ProviderShowtime
 from ..providers.demo_provider import DemoProvider
 from ..providers.movieglu_provider import MovieGluProvider
 from ..providers.scraper_provider import ScraperProvider
 from ..providers.serpapi_provider import SerpApiProvider
-from ..schemas import SearchRequest, SearchResponse, SearchMeta, Showtime
+from ..schemas import (
+    SearchRequest,
+    SearchResponse,
+    SearchMeta,
+    Showtime,
+    ShowtimeLinks,
+)
 from .seatcheck import check_seats
 from .theaters import Theater, candidate_theaters, load_theaters
 
@@ -234,6 +241,20 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
             seats_together=req.seats_together, min_row=req.min_row,
         )
 
+        # Real destinations for this showtime. Deterministic, so this adds no
+        # latency: a provider's own link is a google.com search page, which leaves
+        # a "check manually" badge with nowhere to go.
+        links = ShowtimeLinks(
+            **build_links(
+                chain=chain,
+                chain_slug=(matched.chain_slug if matched else ""),
+                movie_title=st.movie_title,
+                theater_name=st.theater_name,
+                start=st.start_datetime,
+                provider_url=st.booking_url,
+            )
+        )
+
         showtimes.append(
             Showtime(
                 key=_showtime_key(st.theater_name, st.movie_title, st.start_datetime, st.format),
@@ -246,7 +267,10 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
                 format=st.format,
                 start_datetime=st.start_datetime,
                 start_time_label=st.start_datetime.strftime("%-I:%M %p"),
-                booking_url=st.booking_url,
+                # Point at the chain's own page when we know it; the provider's
+                # search link stays available under links.search.
+                booking_url=links.best or st.booking_url,
+                links=links,
                 seat_check=seat_check,
             )
         )
