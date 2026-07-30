@@ -30,8 +30,8 @@ function SeatBadge({ seat }) {
   }
   if (s === "check_manually") {
     return (
-      <Badge tone="yellow">
-        <HelpCircle className="h-3.5 w-3.5" /> Check manually
+      <Badge tone="yellow" title={seat.reason || undefined}>
+        <HelpCircle className="h-3.5 w-3.5" /> Seats unknown
       </Badge>
     );
   }
@@ -86,6 +86,7 @@ function ShowtimeCard({ st, canVerify }) {
   const [err, setErr] = useState(null);
 
   const seat = verified?.seat_check || st.seat_check;
+  const links = st.links || {};
   // The seat page is resolved server-side from theater + start time, so a
   // booking_url is no longer required to offer verification (providers only give
   // google.com links anyway).
@@ -141,14 +142,38 @@ function ShowtimeCard({ st, canVerify }) {
       {verified && !verified.grid?.length && verified.reason && (
         <p className="text-xs text-amber-300/80">{verified.reason}</p>
       )}
+      {seat.status === "check_manually" && !verified && (
+        <p className="text-xs text-muted-foreground">
+          {seat.reason
+            ? seat.reason
+            : "Seat availability isn't published for this showtime."}{" "}
+          {links.chain
+            ? `Open it at ${links.chain_label || "the theater"} to see the seat map.`
+            : "Use the Fandango link to find it."}
+        </p>
+      )}
       {err && <p className="text-xs text-red-300">{err}</p>}
 
-      <div className="mt-1 flex flex-wrap gap-2">
-        <a href={st.booking_url || "#"} target="_blank" rel="noreferrer">
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {/* Primary: the chain's own page for this theatre and date, which is where
+            the ticket is actually sold. Falls back to Fandango when we have no slug
+            for the theatre. */}
+        <a href={links.best || st.booking_url || "#"} target="_blank" rel="noreferrer">
           <Button size="sm" variant="subtle">
-            <Ticket className="h-3.5 w-3.5" /> Book
+            <Ticket className="h-3.5 w-3.5" />
+            {links.chain ? `Open at ${links.chain_label || "the theater"}` : "Find tickets"}
           </Button>
         </a>
+        {links.fandango && links.chain && (
+          <a
+            href={links.fandango}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Fandango
+          </a>
+        )}
         {showVerifyBtn && (
           <Button size="sm" variant="outline" onClick={runVerify} disabled={busy}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}
