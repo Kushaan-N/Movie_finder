@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClipboardPaste, ScanSearch, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -64,6 +64,10 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
   const [pasted, setPasted] = useState("");
   const [applyKey, setApplyKey] = useState("");
   const [applied, setApplied] = useState(false);
+  // Collapsed by default: this is a tool you reach for occasionally, and expanded it
+  // pushed the actual results below the fold. It opens itself when a grid arrives.
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef(null);
 
   // Pick up a grid handed over by the bookmarklet.
   useEffect(() => {
@@ -79,7 +83,13 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
     if (payload) {
       setApplied(false);
       setApplyKey("");
+      setOpen(true);
       submit(payload);
+      // A handoff arrives in a NEW tab, so bring the panel into view rather than
+      // leaving the verdict somewhere the user has to hunt for.
+      requestAnimationFrame(() =>
+        panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
@@ -142,12 +152,28 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
   const seat = result?.seat_check;
 
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <Card className="p-4" ref={panelRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full flex-wrap items-center gap-2 text-left"
+        aria-expanded={open}
+      >
         <ScanSearch className="h-4 w-4 text-primary" />
         <h2 className="text-sm font-semibold">Check seats from your browser</h2>
         <Badge tone="blue">works for every chain</Badge>
-      </div>
+        <span className="ml-auto text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {!open && !seat && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Read a seat map from a page you opened yourself — the only way that reaches
+          Regal and Cinemark.
+        </p>
+      )}
+
+      {open && (
+        <>
       <p className="mt-1 text-xs text-muted-foreground">
         The server can only read AMC's seat map — Regal's is behind a CAPTCHA and
         Cinemark's robots.txt disallows theirs. Opening the seat page yourself gets
@@ -269,6 +295,8 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
           </Button>
         </div>
       </details>
+        </>
+      )}
     </Card>
   );
 }
