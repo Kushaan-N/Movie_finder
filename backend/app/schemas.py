@@ -130,6 +130,26 @@ class SeatGridRow(BaseModel):
     seats_available: list[bool]
 
 
+class GridSeatCheckRequest(BaseModel):
+    """A seat map read from a page the user opened themselves.
+
+    Rows are compact strings, screen-first, one character per position:
+    ``O`` free, ``.`` taken, ``_`` gap/aisle. This is the payload the bookmarklet
+    produces, and it is the only route that reaches all three chains — Regal's
+    seat page is CAPTCHA-gated and Cinemark's is robots-disallowed to automation,
+    but neither restriction applies to a human's own browsing.
+    """
+
+    rows: list[str] = Field(..., min_length=1)
+    chain: str = "unknown"
+    theater_id: str = "single"
+    seats_together: int = Field(default=4, ge=1, le=20)
+    min_row: int = Field(default=5, ge=1, le=60)
+    # Diagnostics from the extractor, echoed back so the UI can show provenance.
+    strategy: Optional[str] = None
+    source_url: Optional[str] = None
+
+
 class VerifySeatsResponse(BaseModel):
     available: bool  # whether verification could actually run on the server
     seat_check: SeatCheck
