@@ -186,18 +186,29 @@ def test_unresolvable_showtime_explains_itself(monkeypatch, cinemark_enabled):
 
 # --- amc: geometry strategy ------------------------------------------------- #
 
-def _amc_extraction(rows, unrecognized=0):
+def _amc_extraction(rows, *, strategy="paint", uniform=None):
+    """A payload in the shared extractor's shape (see scrape/seat_extract.js)."""
     flat = [s for r in rows for s in r]
+    avail = sum(1 for s in flat if s.get("available"))
+    seats = sum(1 for s in flat if not s.get("gap"))
     return {
+        "ok": True,
+        "strategy": strategy,
         "rows": rows,
         "stats": {
-            "seats_found": sum(1 for s in flat if not s.get("gap")),
-            "available_found": sum(1 for s in flat if s.get("available")),
-            "gaps": sum(1 for s in flat if s.get("gap")),
-            "unrecognized": unrecognized,
+            "seats_found": seats,
+            "available_found": avail,
+            "rows_found": len(rows),
+            "uniform": (avail == 0 or avail == seats) if uniform is None else uniform,
             "canvas": 0,
         },
     }
+
+
+def _refused(reason, canvas=0):
+    """What the extractor returns when it will not commit to a reading."""
+    return {"ok": False, "strategy": None, "rows": [],
+            "stats": {"canvas": canvas}, "reason": reason}
 
 
 def _seat(available=False, gap=False):
@@ -221,27 +232,53 @@ def test_amc_geometry_enrich_upgrades_to_match(monkeypatch):
     assert st.seat_check.best_block_row.physical_row == 3
 
 
-def test_amc_geometry_declines_when_palette_changes(monkeypatch):
-    """Only the known seat palette counts as a seat, so a changed palette shows up
-    as too few seats — never as a wrongly-empty auditorium."""
-    rows = [[_seat(available=True) for _ in range(4)]]  # nearly everything unrecognized
+def test_amc_geometry_declines_when_the_extractor_refuses(monkeypatch):
+    """The extractor enforces its own guard rails; a refusal must never become a
+    verdict."""
     _patch(monkeypatch, seat_html="<html></html>",
-           extraction=_amc_extraction(rows, unrecognized=190))
+           extraction=_refused("No seat map recognized on this page."))
     st = _showtime(chain="amc", theater_id="amc-metreon-16")
     verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
     assert verified == 0
     assert st.seat_check.status == "check_manually"
-    assert "palette" in (st.seat_check.reason or "").lower()
+    assert "no seat map recognized" in (st.seat_check.reason or "").lower()
 
 
-def test_amc_geometry_declines_on_too_few_seats(monkeypatch):
-    """A handful of stray svgs is not an auditorium — decline rather than guess."""
-    rows = [[_seat(available=True) for _ in range(3)]]
-    _patch(monkeypatch, seat_html="<html></html>", extraction=_amc_extraction(rows))
+def test_amc_geometry_reports_a_canvas_map(monkeypatch):
+    _patch(monkeypatch, seat_html="<html></html>", extraction=_refused(None, canvas=1))
     st = _showtime(chain="amc", theater_id="amc-metreon-16")
     verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
     assert verified == 0
-    assert "expected at least" in (st.seat_check.reason or "").lower()
+    assert "canvas" in (st.seat_check.reason or "").lower()
+
+
+def test_a_uniform_reading_is_flagged_for_checking(monkeypatch):
+    """Accepted, but flagged: it is either a sold-out house or a failed split."""
+    rows = [[_seat() for _ in range(12)] for _ in range(4)]
+    _patch(monkeypatch, seat_html="<html></html>",
+           extraction=_amc_extraction(rows, uniform=True))
+    st = _showtime(chain="amc", theater_id="amc-metreon-16")
+    asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
+    assert st.seat_check.status == "no_match"
+
+
+def test_amc_geometry_reports_a_canvas_map(monkeypatch):
+    """A canvas map is unreadable and must be named as such."""
+    _patch(monkeypatch, seat_html="<html></html>", extraction=_refused(None, canvas=1))
+    st = _showtime(chain="amc", theater_id="amc-metreon-16")
+    verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
+    assert verified == 0
+    assert "canvas" in (st.seat_check.reason or "").lower()
+
+
+def test_a_uniform_reading_is_flagged_for_checking(monkeypatch):
+    """Accepted, but the UI needs to know it couldn't distinguish two states."""
+    rows = [[_seat() for _ in range(12)] for _ in range(4)]
+    _patch(monkeypatch, seat_html="<html></html>",
+           extraction=_amc_extraction(rows, uniform=True))
+    st = _showtime(chain="amc", theater_id="amc-metreon-16")
+    asyncio.run(SeatVerifier().enrich([st], seats_together=2, min_row=1))
+    assert st.seat_check.status == "no_match"
 
 
 def test_amc_geometry_treats_aisles_as_breaking_contiguity(monkeypatch):
@@ -298,15 +335,14 @@ def test_amc_geometry_excludes_page_chrome_from_rows(monkeypatch):
 
     Back/close/collapse icons are seat-sized; if they clustered into a phantom row
     above the map, every physical row number would shift and min_row would break
-    silently. Only elements painted in the seat palette are collected, so chrome
-    lands in `unrecognized` instead.
+    silently. The extractor drops clusters that aren't seat rows, so only real rows
+    reach here.
     """
     rows = [
         [_seat(available=True) for _ in range(12)],  # real row 1
         [_seat() for _ in range(12)],                # real row 2
     ]
-    _patch(monkeypatch, seat_html="<html></html>",
-           extraction=_amc_extraction(rows, unrecognized=10))
+    _patch(monkeypatch, seat_html="<html></html>", extraction=_amc_extraction(rows))
     st = _showtime(chain="amc", theater_id="amc-metreon-16")
     asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
     assert st.seat_check.status == "match"
