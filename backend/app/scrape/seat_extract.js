@@ -34,6 +34,8 @@
   options = options || {};
   var MIN_SEATS = options.minSeats || 20;
   var MIN_ROWS = options.minRows || 3;
+  // Rows narrower than this are not auditorium rows -- see score().
+  var MIN_ROW_WIDTH = options.minRowWidth || 4;
   var SEAT_MIN = options.seatMinPx || 8;
   var SEAT_MAX = options.seatMaxPx || 80;
   var ROW_TOL = options.rowTolerancePx || 12;
@@ -442,10 +444,22 @@
   }
 
   function score(rows) {
-    var seats = 0;
-    for (var i = 0; i < rows.length; i++)
-      for (var j = 0; j < rows[i].length; j++) if (!rows[i][j].gap) seats++;
-    return { seats: seats, rows: rows.length };
+    var seats = 0, widths = [];
+    for (var i = 0; i < rows.length; i++) {
+      var w = 0;
+      for (var j = 0; j < rows[i].length; j++) if (!rows[i][j].gap) { seats++; w++; }
+      widths.push(w);
+    }
+    widths.sort(function (a, b) { return a - b; });
+    return {
+      seats: seats,
+      rows: rows.length,
+      // An auditorium has rows several seats wide. Without this, a strategy that
+      // picked up 224 scattered elements scored 224 "rows" of one seat each and
+      // still produced a verdict -- measured on AMC Eastridge, where `interactive`
+      // beat the correct `paint` reading with that shape.
+      medianWidth: widths.length ? widths[Math.floor(widths.length / 2)] : 0,
+    };
   }
 
   // --- run strategies in order of trustworthiness ------------------------- //
@@ -466,6 +480,7 @@
       continue;
     }
     var s = score(rows), avail = 0;
+    s.plausible = s.medianWidth >= MIN_ROW_WIDTH;
     for (var i = 0; i < rows.length; i++)
       for (var j = 0; j < rows[i].length; j++) if (rows[i][j].available) avail++;
     s.available = avail;
@@ -476,7 +491,7 @@
     // this is a preference, not a veto.
     s.discriminates = avail > 0 && avail < s.seats;
     tried[attempts[a].name] = s;
-    if (s.seats >= MIN_SEATS && s.rows >= MIN_ROWS) {
+    if (s.seats >= MIN_SEATS && s.rows >= MIN_ROWS && s.plausible) {
       viable.push({ name: attempts[a].name, rows: rows, s: s, colour: lastPaintSource });
     }
   }
