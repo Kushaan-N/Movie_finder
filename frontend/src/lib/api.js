@@ -22,6 +22,12 @@ export const api = {
   search: (payload) => req("/api/search", { method: "POST", body: JSON.stringify(payload) }),
   verifySeats: (payload) =>
     req("/api/verify-seats", { method: "POST", body: JSON.stringify(payload) }),
+  // Seat grid read by the bookmarklet in the user's own browser -- the only route
+  // that reaches every chain (Regal is CAPTCHA-gated, Cinemark robots-disallowed).
+  verifySeatsFromGrid: (payload) =>
+    req("/api/verify-seats/from-grid", { method: "POST", body: JSON.stringify(payload) }),
+  bookmarklet: (appUrl) =>
+    req(`/api/seat-bookmarklet?app_url=${encodeURIComponent(appUrl)}`),
   listSaved: () => req("/api/saved-searches"),
   createSaved: (name, config) =>
     req("/api/saved-searches", { method: "POST", body: JSON.stringify({ name, config }) }),
