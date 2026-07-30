@@ -145,3 +145,34 @@ def test_aisle_splits_a_run_in_the_interactive_map():
     free = sum(1 for c in row3 if c["available"] and not c["gap"])
     assert free == 6            # six free seats in the row...
     assert max(runs) == 5       # ...but never a 6-run, because an aisle divides them
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_prefers_a_strategy_that_distinguishes_two_states():
+    """Guards the worst possible error: calling taken seats free.
+
+    Every seat on this fixture is an enabled button, so the `interactive` strategy
+    sees no disabled control and would report the whole auditorium as available.
+    Availability really lives in the colour, and the legend names it.
+    """
+    with serve_fixtures() as base:
+        res = _extract(f"{base}/misleading-seats", "{minSeats:20, minRows:3}")
+
+    assert res["ok"] is True
+    # interactive DID meet the size thresholds, so it was only rejected for being
+    # uniform -- confirm that is what happened rather than it simply not matching.
+    tried = res["stats"]["tried"]
+    assert tried["interactive"]["seats"] >= 20
+    assert tried["interactive"]["available"] == tried["interactive"]["seats"]
+    assert tried["interactive"]["discriminates"] is False
+
+    assert res["strategy"] == "paint"
+    assert res["stats"]["colour_source"] == "legend"
+    assert res["stats"]["uniform"] is False
+    # Only row 2 is free, four seats of it.
+    assert _render(res["rows"]) == [
+        "............",
+        "....OOOO....",
+        "............",
+        "............",
+    ]
