@@ -13,9 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import urllib.robotparser
+import urllib.request
 from urllib.parse import urlparse
 
+from .. import robots
 from ..config import get_settings
 from .base import ProviderQuery, ProviderShowtime, ShowtimeProvider
 
@@ -39,25 +40,75 @@ class RateLimiter:
             self._last = time.monotonic()
 
 
-_robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
+_robots_cache: dict[str, "robots.RobotsFile"] = {}
+_DENY_ALL = robots.parse("User-agent: *\nDisallow: /")
+
+# Theater chains reject urllib's default User-Agent outright (both amctheatres.com
+# and cinemark.com answer robots.txt with 403 to "Python-urllib/x.y"), which made
+# every robots check fail closed and silently disabled seat verification entirely.
+# We fetch robots.txt with the same browser-like UA we use for pages so we can
+# actually READ the rules — and then obey them.
+_ROBOTS_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0 Safari/537.36 showtime-finder/1.0"
+)
+
+
+def robots_root(url: str) -> str:
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def cache_robots(root: str, body: str) -> bool:
+    """Parse and cache a robots.txt body for ``root``.
+
+    Returns False (and caches deny-all) when the body cannot be trusted as this
+    host's real robots.txt. Two cases, both seen live on 2026-07-29:
+
+    * the body is HTML — amctheatres.com serves a bot-check page to non-browser
+      clients;
+    * the body has no directives at all — cinemark.com answers with a Cloudflare
+      "Performing security verification" interstitial, whose *text* parses to zero
+      rules and would therefore read as "allow everything".
+
+    A genuinely empty robots.txt does mean allow-all, but we cannot tell one from
+    a challenge page, so we fail closed rather than scrape on a guess.
+    """
+    try:
+        rf = robots.parse(body)
+    except robots.NotRobotsTxt as exc:
+        logger.info("robots.txt for %s is not parseable (%s); treating as deny.", root, exc)
+        _robots_cache[root] = _DENY_ALL
+        return False
+    if rf.empty:
+        logger.info("robots.txt for %s had no directives; treating as deny.", root)
+        _robots_cache[root] = _DENY_ALL
+        return False
+    _robots_cache[root] = rf
+    return True
+
+
+def _fetch_robots(root: str) -> robots.RobotsFile:
+    """Read and parse ``root/robots.txt`` over plain HTTP. Raises on failure."""
+    req = urllib.request.Request(f"{root}/robots.txt", headers={"User-Agent": _ROBOTS_UA})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        body = resp.read().decode("utf-8", "replace")
+    return robots.parse(body)
 
 
 def _robots_allows(url: str, user_agent: str = "showtime-finder") -> bool:
-    parsed = urlparse(url)
-    root = f"{parsed.scheme}://{parsed.netloc}"
-    rp = _robots_cache.get(root)
-    if rp is None:
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(f"{root}/robots.txt")
+    root = robots_root(url)
+    rf = _robots_cache.get(root)
+    if rf is None:
         try:
-            rp.read()
+            rf = _fetch_robots(root)
         except Exception as exc:  # pragma: no cover - network dependent
             logger.info("robots.txt unreadable for %s (%s); skipping this host.", root, exc)
             # Be conservative: if we can't read robots, don't scrape.
-            _robots_cache[root] = rp
+            _robots_cache[root] = _DENY_ALL
             return False
-        _robots_cache[root] = rp
-    return rp.can_fetch(user_agent, url)
+        _robots_cache[root] = rf
+    return rf.can_fetch(user_agent, url)
 
 
 # NOTE: seat-map PARSING now lives in app/scrape/seatmap.py (config-driven, fully
