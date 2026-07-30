@@ -9,6 +9,7 @@ export function defaultSearch() {
   return {
     movie_title: "",
     format: "Any",
+    formats: ["Any"],
     location: "94103",
     radius_miles: 25,
     date_from: isoDaysFromNow(0),
