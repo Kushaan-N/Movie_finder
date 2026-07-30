@@ -113,7 +113,7 @@ playwright install chromium
 
 ## Getting a free SerpApi key (recommended)
 
-1. Sign up at **https://serpapi.com/** (free tier: **100 searches/month**).
+1. Sign up at **https://serpapi.com/** (free tier: **250 searches/month**).
 2. Copy your key from the dashboard.
 3. Paste it into `backend/.env` (the file already exists — it's gitignored):
    ```
@@ -122,10 +122,18 @@ playwright install chromium
 4. Restart uvicorn. `GET /api/health` should report `"serpapi": true`, and searches
    use SerpApi's Google **showtimes** results (structured JSON, most reliable).
 
-> **Location tip:** SerpApi resolves showtimes best with a city/state location
-> (e.g. `San Jose, California`) rather than a bare ZIP. A single call returns the
-> next several days; the app converts each day's relative label to a real date and
-> keeps only those inside your selected date range.
+> **How quota is spent:** Google only serves its showtimes widget for
+> *theater-name* queries, so one search costs **one SerpApi request per theater in
+> range** — not one per search. A 25-mile radius over the default `theaters.json`
+> is typically 1–3 requests. Two things keep this bounded: the radius/format
+> prefilter (only in-range theaters are queried) and `search_cache_ttl_sec`
+> (identical searches are served from cache for 5 minutes). Widening the radius or
+> adding theaters increases per-search cost proportionally. Check remaining quota
+> at https://serpapi.com/account.
+>
+> Each response covers the next several days; the app converts each day's relative
+> label ("Today", "Fri") to a real date and keeps only those inside your selected
+> date range. A bare ZIP (`94103`) works fine as a location — SerpApi resolves it.
 
 **No key? No problem.** With `SERPAPI_KEY` empty the app runs in **demo mode**
 (clearly labeled synthetic showtimes) so the entire UI — seat badges, row mapping,
