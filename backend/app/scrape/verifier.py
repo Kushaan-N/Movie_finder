@@ -381,6 +381,10 @@ class SeatVerifier:
             else:
                 result = parse_seat_html(chain, html)
 
+        # Carry the resolved page back regardless of the parse outcome: finding it
+        # is the expensive step, and it is exactly the page the user would
+        # otherwise have to hunt for -- especially useful when parsing failed.
+        result.seat_url = seat_url
         self._cache[seat_url] = (now, result)
         return result
 

@@ -39,6 +39,10 @@ class SeatMapParseResult:
     # seat question definitively without a seat map — no seats at all means no N
     # together — so it is carried separately rather than faked as an empty map.
     sold_out: bool = False
+    # The chain's page for THIS showtime, once resolved. Worth handing back to the
+    # user even when parsing fails: it is the exact page they'd otherwise have to
+    # find by hand, and resolving it is the expensive part.
+    seat_url: Optional[str] = None
 
     @property
     def ok(self) -> bool:
