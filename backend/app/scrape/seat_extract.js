@@ -132,12 +132,12 @@
     for (var i = 0; i < cands.length; i++) {
       var c = cands[i], d = descriptor(c.el);
       if (!d.trim()) continue;
-      if (hasAny(d, IGNORE_TOKENS)) { seats.push({ x: c.x, y: c.y, gap: true }); continue; }
+      if (hasAny(d, IGNORE_TOKENS)) { seats.push({ x: c.x, y: c.y, h: c.h, gap: true }); continue; }
       var taken = hasAny(d, TAKEN_TOKENS);
       var avail = hasAny(d, AVAIL_TOKENS);
       if (!taken && !avail) continue;
       // "unavailable" contains "available", so taken wins ties.
-      seats.push({ x: c.x, y: c.y, available: taken ? false : true });
+      seats.push({ x: c.x, y: c.y, h: c.h, available: taken ? false : true });
     }
     return seats;
   }
@@ -151,9 +151,9 @@
                   el.tagName === 'INPUT' || el.hasAttribute('aria-disabled');
       if (!isCtl) continue;
       var d = descriptor(el);
-      if (hasAny(d, IGNORE_TOKENS)) { seats.push({ x: c.x, y: c.y, gap: true }); continue; }
+      if (hasAny(d, IGNORE_TOKENS)) { seats.push({ x: c.x, y: c.y, h: c.h, gap: true }); continue; }
       var disabled = el.disabled === true || norm(el.getAttribute('aria-disabled')) === 'true';
-      seats.push({ x: c.x, y: c.y, available: !disabled });
+      seats.push({ x: c.x, y: c.y, h: c.h, available: !disabled });
     }
     return seats;
   }
@@ -290,7 +290,7 @@
       var c = cands[i];
       var p = paintOf(c.el);
       if (!p) continue; // no paint declared -> not a seat
-      read.push({ x: c.x, y: c.y, rgb: p.rgb, rank: p.rank });
+      read.push({ x: c.x, y: c.y, h: c.h, rgb: p.rgb, rank: p.rank });
     }
     if (!read.length) return [];
 
@@ -328,19 +328,31 @@
     }
     lastPaintSource = source;
     return read.map(function (s) {
-      return { x: s.x, y: s.y, available: !!isAvail(s.rgb), rank: s.rank };
+      return { x: s.x, y: s.y, h: s.h, available: !!isAvail(s.rgb), rank: s.rank };
     });
   }
 
   // --- shared: cluster into rows ------------------------------------------ //
+  // Group seats into rows by VERTICAL OVERLAP rather than a fixed centre distance.
+  // Seats in one row often differ in height (a seat carrying an inline label is
+  // taller), which shifts its centre and split single rows in two under a fixed
+  // tolerance. Overlap is the standard way to detect a line of boxes and tolerates
+  // that naturally.
   function toRows(seats) {
     seats = dedupeSeats(seats.slice()).sort(function (a, b) { return a.y - b.y; });
-    var rows = [], cur = [];
+    var rows = [], cur = [], bandTop = 0, bandBot = 0;
     for (var i = 0; i < seats.length; i++) {
-      if (cur.length && Math.abs(seats[i].y - cur[cur.length - 1].y) > ROW_TOL) {
-        rows.push(cur); cur = [];
+      var s = seats[i], h = s.h || ROW_TOL, top = s.y - h / 2, bot = s.y + h / 2;
+      if (!cur.length) {
+        cur = [s]; bandTop = top; bandBot = bot; continue;
       }
-      cur.push(seats[i]);
+      var overlap = Math.min(bot, bandBot) - Math.max(top, bandTop);
+      if (overlap > 0.4 * Math.min(h, bandBot - bandTop)) {
+        cur.push(s);
+        bandTop = Math.min(bandTop, top); bandBot = Math.max(bandBot, bot);
+      } else {
+        rows.push(cur); cur = [s]; bandTop = top; bandBot = bot;
+      }
     }
     if (cur.length) rows.push(cur);
 
