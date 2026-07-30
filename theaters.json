@@ -18,7 +18,7 @@
       "address": "2190 Eastridge Loop, San Jose, CA 95122",
       "lat": 37.3252,
       "lng": -121.8113,
-      "formats": ["Dolby", "Standard"],
+      "formats": ["IMAX", "Dolby", "Standard"],
       "booking_base_url": "https://www.amctheatres.com"
     },
     {
