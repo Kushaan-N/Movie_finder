@@ -8,6 +8,8 @@ import asyncio
 import os
 from datetime import datetime
 
+import pytest
+
 from app.schemas import SeatCheck, Showtime
 from app.scrape import verifier as verifier_mod
 from app.scrape.verifier import SeatVerifier, verifiable_chains
@@ -19,6 +21,21 @@ START = datetime(2026, 8, 1, 23, 0)  # matches the 11:00pm link in the listing
 def _fixture(name: str) -> str:
     with open(os.path.join(FIXTURES, name), encoding="utf-8") as f:
         return f.read()
+
+
+@pytest.fixture
+def cinemark_enabled(monkeypatch):
+    """Re-enable Cinemark for tests of the `dom` strategy.
+
+    Its parser is verified against real markup; it is disabled in production only
+    because robots.txt forbids fetching the seat map. Keeping it exercised means
+    the strategy still works the day that policy changes.
+    """
+    from app.scrape.seatmap import _load_selectors
+
+    cfg = _load_selectors()["chains"]["cinemark"]
+    monkeypatch.delitem(cfg, "disabled", raising=False)
+    return cfg
 
 
 def _showtime(chain="cinemark", theater_id="cinemark-century-20-oakridge",
@@ -50,7 +67,12 @@ def _patch(monkeypatch, *, seat_html=None, extraction=None, reason=None,
         if listing_html is not None:
             return listing_html, None, None
         # Serve each chain its own listing markup.
-        name = "amc_listing.html" if "amctheatres" in url else "cinemark_listing.html"
+        if "amctheatres" in url:
+            name = "amc_listing.html"
+        elif "regmovies" in url:
+            name = "regal_listing.html"
+        else:
+            name = "cinemark_listing.html"
         return _fixture(name), None, None
 
     monkeypatch.setattr(SeatVerifier, "_fetch_page", fake_fetch)
@@ -59,26 +81,62 @@ def _patch(monkeypatch, *, seat_html=None, extraction=None, reason=None,
 
 # --- chain support ---------------------------------------------------------- #
 
-def test_regal_is_not_verifiable_and_says_why():
-    """Regal's seat page is behind a Cloudflare CAPTCHA, so it must be excluded."""
+def test_only_chains_that_can_answer_are_verifiable():
+    """AMC yields a full map; Regal yields sold-out state; Cinemark is forbidden."""
     chains = verifiable_chains()
-    assert "cinemark" in chains
     assert "amc" in chains
-    assert "regal" not in chains
+    assert "regal" in chains          # capacity strategy still answers sold-out
+    assert "cinemark" not in chains   # robots.txt disallows its seat map
 
 
-def test_enrich_reports_blocked_chain_instead_of_failing_silently(monkeypatch):
+def test_disabled_chain_reports_policy_instead_of_failing_silently(monkeypatch):
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"))
-    st = _showtime(chain="regal", theater_id="regal-hacienda-crossings")
+    st = _showtime(chain="cinemark")
     verified, notes = asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
     assert verified == 0
     assert st.seat_check.status == "check_manually"
-    assert any("captcha" in n.lower() for n in notes)
+    assert any("robots.txt" in n.lower() for n in notes)
+
+
+# --- regal: capacity strategy ----------------------------------------------- #
+
+def test_regal_sold_out_becomes_a_definitive_no_match(monkeypatch):
+    """Zero seats is a real answer, not an unknown."""
+    _patch(monkeypatch, seat_html="<html></html>")
+    st = _showtime(chain="regal", theater_id="regal-hacienda-crossings",
+                   start=datetime(2026, 8, 1, 22, 30))  # 10:30pm, sold out
+    verified, notes = asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
+    assert st.seat_check.status == "no_match"
+    assert "sold out" in (st.seat_check.reason or "").lower()
+    assert verified == 0  # counted separately from real seat-map verifications
+    assert any("sold out" in n.lower() for n in notes)
+
+
+def test_regal_on_sale_stays_check_manually_with_the_captcha_reason(monkeypatch):
+    _patch(monkeypatch, seat_html="<html></html>")
+    st = _showtime(chain="regal", theater_id="regal-hacienda-crossings",
+                   start=datetime(2026, 8, 1, 21, 30))  # 9:30pm, still on sale
+    asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
+    assert st.seat_check.status == "check_manually"
+    assert "captcha" in (st.seat_check.reason or "").lower()
+
+
+def test_regal_sold_out_is_attributed_to_the_right_film(monkeypatch):
+    """A listing carries many movies at overlapping times.
+
+    The fixture has The Odyssey on sale at 7:30pm while Spider-Man is sold out at
+    7:30pm; matching on time alone would report the wrong film's state.
+    """
+    _patch(monkeypatch, seat_html="<html></html>")
+    st = _showtime(chain="regal", theater_id="regal-hacienda-crossings",
+                   start=datetime(2026, 8, 1, 19, 30))
+    asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
+    assert st.seat_check.status == "check_manually"  # NOT no_match
 
 
 # --- cinemark: dom strategy ------------------------------------------------- #
 
-def test_cinemark_enrich_upgrades_to_match(monkeypatch):
+def test_cinemark_enrich_upgrades_to_match(monkeypatch, cinemark_enabled):
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"))
     st = _showtime()
     verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
@@ -89,7 +147,7 @@ def test_cinemark_enrich_upgrades_to_match(monkeypatch):
     assert st.seat_check.best_block_row.physical_row == 3
 
 
-def test_cinemark_respects_min_row(monkeypatch):
+def test_cinemark_respects_min_row(monkeypatch, cinemark_enabled):
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"))
     st = _showtime()
     # The only 4+ run is at physical row 3; demanding row 4+ must not match.
@@ -97,7 +155,7 @@ def test_cinemark_respects_min_row(monkeypatch):
     assert st.seat_check.status == "no_match"
 
 
-def test_cinemark_ignores_wheelchair_and_companion_positions(monkeypatch):
+def test_cinemark_ignores_wheelchair_and_companion_positions(monkeypatch, cinemark_enabled):
     """Accessible positions are not general seating and must not pad a run."""
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"))
     st = _showtime()
@@ -107,7 +165,7 @@ def test_cinemark_ignores_wheelchair_and_companion_positions(monkeypatch):
     assert st.seat_check.best_block_size == 5
 
 
-def test_canvas_map_stays_check_manually(monkeypatch):
+def test_canvas_map_stays_check_manually(monkeypatch, cinemark_enabled):
     _patch(monkeypatch, seat_html="<html><body><canvas></canvas></body></html>")
     st = _showtime()
     verified, _ = asyncio.run(SeatVerifier().enrich([st], seats_together=4, min_row=1))
@@ -116,7 +174,7 @@ def test_canvas_map_stays_check_manually(monkeypatch):
     assert "canvas" in (st.seat_check.reason or "").lower()
 
 
-def test_unresolvable_showtime_explains_itself(monkeypatch):
+def test_unresolvable_showtime_explains_itself(monkeypatch, cinemark_enabled):
     # A listing with no matching time -> no seat URL to open.
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"),
            listing_html="<html><body>no showtimes here</body></html>")
@@ -199,7 +257,7 @@ def test_amc_geometry_treats_aisles_as_breaking_contiguity(monkeypatch):
 
 # --- shared behavior -------------------------------------------------------- #
 
-def test_enrich_caps_and_notes(monkeypatch):
+def test_enrich_caps_and_notes(monkeypatch, cinemark_enabled):
     _patch(monkeypatch, seat_html=_fixture("cinemark_seatmap.html"))
     monkeypatch.setattr(verifier_mod.get_settings(), "seat_verification_max", 2, raising=False)
     sts = [_showtime(key=f"k{i}") for i in range(5)]
@@ -216,7 +274,7 @@ def test_enrich_skips_unknown_chain(monkeypatch):
     assert st.seat_check.status == "check_manually"
 
 
-def test_listing_is_fetched_once_per_theater_and_date(monkeypatch):
+def test_listing_is_fetched_once_per_theater_and_date(monkeypatch, cinemark_enabled):
     """N showtimes at one theater on one date must cost one listing load."""
     calls: list[str] = []
 
