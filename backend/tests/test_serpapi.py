@@ -8,6 +8,7 @@ from app.providers.serpapi_provider import (
     _resolve_date,
     _titles_match,
 )
+from app.formats import format_matches, format_matches_any
 from app.services.theaters import Theater
 
 TODAY = date(2026, 7, 26)
@@ -208,3 +209,31 @@ def test_fetch_survives_one_failing_theater(monkeypatch):
     rows = asyncio.run(SerpApiProvider().fetch(q))
 
     assert {r.theater_name for r in rows} == {"AMC Eastridge 15"}
+
+
+def test_format_hierarchy_broad_request_accepts_premium_variants():
+    """Checking "IMAX" must not hide a 70mm IMAX screening of the same movie.
+
+    This is the bug that made an IMAX search of The Odyssey return nothing: every
+    showing at Metreon/Regal was reported by Google as "70mm IMAX", and exact
+    string equality dropped all of them.
+    """
+    assert format_matches("IMAX", "70mm IMAX")
+    assert format_matches("70mm", "70mm IMAX")
+    assert format_matches("Any", "70mm IMAX")
+    assert format_matches("IMAX", "IMAX")
+
+
+def test_format_hierarchy_specific_request_is_not_downgraded():
+    # Asking for 70mm IMAX should not match a plain IMAX or 70mm screening.
+    assert not format_matches("70mm IMAX", "IMAX")
+    assert not format_matches("70mm IMAX", "70mm")
+    assert not format_matches("IMAX", "Dolby")
+    assert not format_matches("XD", "Standard")
+
+
+def test_format_matches_any_ors_the_selection():
+    assert format_matches_any("70mm IMAX", ["IMAX", "Dolby"])
+    assert format_matches_any("Dolby", ["IMAX", "Dolby"])
+    assert not format_matches_any("XD", ["IMAX", "Dolby"])
+    assert format_matches_any("XD", [])  # empty selection == Any
