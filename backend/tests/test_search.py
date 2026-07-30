@@ -165,3 +165,86 @@ def test_cache_hit_and_bypass():
     clear_search_cache()
     asyncio.run(run_search(req, use_cache=False))
     assert len(search_mod._search_cache) == 0
+
+
+def test_local_filter_tweaks_do_not_refetch(monkeypatch, configure_provider):
+    """Changing seat requirements must not cost another provider fetch.
+
+    seats_together, min_row, the time window and the format filter are all applied
+    locally, so they cannot change what the provider returns. Before the provider
+    cache existed they still missed the response cache and re-fetched -- one SerpApi
+    request per in-range theater, for a nudge of a number field.
+    """
+    clear_search_cache()
+    configure_provider(serpapi_key="test-key")
+    calls: list[str] = []
+
+    async def fake_request(self, q, location):
+        calls.append(q)
+        return {"showtimes": [{"day": "Today", "movies": [
+            {"name": "The Odyssey", "showing": [
+                {"type": "IMAX", "time": ["7:00pm"]},
+                {"type": "Standard", "time": ["9:00pm"]},
+            ]}]}]}
+
+    monkeypatch.setattr(search_mod.SerpApiProvider, "_request", fake_request)
+    today = datetime.now().date().isoformat()
+    base = dict(movie_title="The Odyssey", location="94103", radius_miles=30,
+                date_from=today, date_to=today)
+
+    first = asyncio.run(run_search(SearchRequest(**base, min_row=1, seats_together=2)))
+    fetches = len(calls)
+    assert fetches > 0 and first.meta.showtimes_returned > 0
+
+    # Each of these changes only local filtering.
+    for tweak in (
+        dict(min_row=9, seats_together=2),
+        dict(min_row=1, seats_together=8),
+        dict(min_row=1, seats_together=2, formats=["IMAX"]),
+        dict(min_row=1, seats_together=2,
+             time_rule={"weekday_cutoff": "20:00", "weekends_unrestricted": False}),
+    ):
+        asyncio.run(run_search(SearchRequest(**base, **tweak)))
+        assert len(calls) == fetches, f"re-fetched after {tweak}"
+
+
+def test_a_different_movie_does_refetch(monkeypatch, configure_provider):
+    """The provider cache must not serve one film's rows for another."""
+    clear_search_cache()
+    configure_provider(serpapi_key="test-key")
+    calls: list[str] = []
+
+    async def fake_request(self, q, location):
+        calls.append(q)
+        return {"showtimes": [{"day": "Today", "movies": [
+            {"name": "The Odyssey", "showing": [{"type": "IMAX", "time": ["7:00pm"]}]}]}]}
+
+    monkeypatch.setattr(search_mod.SerpApiProvider, "_request", fake_request)
+    today = datetime.now().date().isoformat()
+    asyncio.run(run_search(SearchRequest(movie_title="The Odyssey", location="94103",
+                                         date_from=today, date_to=today, min_row=1)))
+    after_first = len(calls)
+    asyncio.run(run_search(SearchRequest(movie_title="Moana", location="94103",
+                                         date_from=today, date_to=today, min_row=1)))
+    assert len(calls) > after_first
+
+
+def test_a_wider_radius_refetches(monkeypatch, configure_provider):
+    """Radius changes which theaters are queried, so it must not be cached across."""
+    clear_search_cache()
+    configure_provider(serpapi_key="test-key")
+    calls: list[str] = []
+
+    async def fake_request(self, q, location):
+        calls.append(q)
+        return {"showtimes": [{"day": "Today", "movies": [
+            {"name": "The Odyssey", "showing": [{"type": "IMAX", "time": ["7:00pm"]}]}]}]}
+
+    monkeypatch.setattr(search_mod.SerpApiProvider, "_request", fake_request)
+    today = datetime.now().date().isoformat()
+    base = dict(movie_title="The Odyssey", location="94103", date_from=today,
+                date_to=today, min_row=1)
+    asyncio.run(run_search(SearchRequest(**base, radius_miles=5)))
+    after_narrow = len(calls)
+    asyncio.run(run_search(SearchRequest(**base, radius_miles=100)))
+    assert len(calls) > after_narrow
