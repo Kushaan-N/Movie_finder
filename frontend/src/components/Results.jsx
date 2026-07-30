@@ -8,6 +8,8 @@ import {
   ArmchairIcon,
   ScanSearch,
   Loader2,
+  CalendarPlus,
+  Navigation,
 } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -17,6 +19,43 @@ function formatBadgeTone(fmt) {
   if (f.includes("imax")) return "blue";
   if (f.includes("dolby") || f.includes("xd") || f.includes("screenx")) return "new";
   return "default";
+}
+
+// Google Maps handles a free-text query well, so an address (or failing that the
+// theatre name) is enough for turn-by-turn directions.
+function directionsUrl(st) {
+  const q = st.address || st.theater_name;
+  return q ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}` : null;
+}
+
+// A calendar file, built client-side so it needs no round trip. Duration is a
+// deliberate 2h30 guess (typical feature + trailers) since showtime feeds don't
+// publish runtime; the description says so rather than implying precision.
+function downloadIcs(st) {
+  const start = new Date(st.start_datetime);
+  const end = new Date(start.getTime() + 150 * 60 * 1000);
+  const stamp = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const esc = (v) => String(v || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//showtime-finder//EN",
+    "BEGIN:VEVENT",
+    `UID:${st.key}@showtime-finder`,
+    `DTSTAMP:${stamp(new Date())}`,
+    `DTSTART:${stamp(start)}`,
+    `DTEND:${stamp(end)}`,
+    `SUMMARY:${esc(`${st.movie_title} (${st.format})`)}`,
+    `LOCATION:${esc(st.address || st.theater_name)}`,
+    `DESCRIPTION:${esc(`${st.theater_name}. End time is an estimate (2h30) — showtime data doesn't include runtime.`)}`,
+    "END:VEVENT", "END:VCALENDAR",
+  ];
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${st.movie_title}-${st.start_datetime.slice(0, 16).replace(/[:T]/g, "-")}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 // Reasons arrive from providers, scrapers and chain configs; only some are written
@@ -150,6 +189,18 @@ function ShowtimeCard({ st, canVerify }) {
       {verified && !verified.grid?.length && verified.reason && (
         <p className="text-xs text-amber-300/80">{verified.reason}</p>
       )}
+      {/* Resolving this URL is the expensive half of verification, so offer it
+          whatever the outcome -- it is the exact page for this showtime. */}
+      {verified?.seat_url && (
+        <a
+          href={verified.seat_url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-primary underline"
+        >
+          Open this showtime's seat map ↗
+        </a>
+      )}
       {seat.status === "check_manually" && !verified && (
         <p className="text-xs text-muted-foreground">
           {/* Reasons come from several sources and don't all end in punctuation,
@@ -187,6 +238,24 @@ function ShowtimeCard({ st, canVerify }) {
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}
             {busy ? "Checking…" : "Check seats"}
           </Button>
+        )}
+        <button
+          type="button"
+          onClick={() => downloadIcs(st)}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline hover:text-foreground"
+          title="Add to calendar (end time is an estimate)"
+        >
+          <CalendarPlus className="h-3.5 w-3.5" /> Calendar
+        </button>
+        {directionsUrl(st) && (
+          <a
+            href={directionsUrl(st)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            <Navigation className="h-3.5 w-3.5" /> Directions
+          </a>
         )}
       </div>
     </div>
