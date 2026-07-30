@@ -316,15 +316,26 @@
         return da < dt && da < 60;
       };
     } else {
-      // Last resort: free seats are drawn saturated, taken ones grey/outline.
+      var painted = 0, unpainted = 0, i2;
+      for (i2 = 0; i2 < read.length; i2++) (read[i2].rgb ? painted++ : unpainted++);
       var sats = read.map(function (s) { return saturation(s.rgb); })
                      .filter(function (v) { return v >= 0; }).sort(function (a, b) { return a - b; });
-      if (!sats.length) return [];
-      var lo = sats[0], hi = sats[sats.length - 1];
-      if (hi - lo < 0.15) return []; // one visual state only — can't tell them apart
-      var mid = (lo + hi) / 2;
-      source = 'saturation';
-      isAvail = function (rgb) { return saturation(rgb) > mid; };
+      var spread = sats.length ? sats[sats.length - 1] - sats[0] : 0;
+
+      if (painted >= 3 && unpainted >= 3 && spread < 0.15) {
+        // Two states where one is simply "not filled" — how AMC draws a taken seat
+        // (a gradient whose stops are all transparent). Saturation cannot split
+        // this, because the taken seats have no colour to measure at all.
+        source = 'painted-vs-unpainted';
+        isAvail = function (rgb) { return !!rgb; };
+      } else if (sats.length && spread >= 0.15) {
+        // Free seats are drawn saturated, taken ones grey.
+        var mid = (sats[0] + sats[sats.length - 1]) / 2;
+        source = 'saturation';
+        isAvail = function (rgb) { return saturation(rgb) > mid; };
+      } else {
+        return []; // one visual state only — refuse rather than guess
+      }
     }
     lastPaintSource = source;
     return read.map(function (s) {
