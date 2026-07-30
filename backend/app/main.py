@@ -148,7 +148,10 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
                     seats_available=row.seats_available,
                 )
             )
-    return VerifySeatsResponse(available=True, seat_check=check, grid=grid, stats=result.stats, reason=result.reason)
+    return VerifySeatsResponse(
+        available=True, seat_check=check, grid=grid, stats=result.stats,
+        reason=result.reason, seat_url=result.seat_url,
+    )
 
 
 @app.get("/api/seat-bookmarklet")
