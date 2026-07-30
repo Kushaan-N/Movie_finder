@@ -16,12 +16,14 @@ Three tiers, best first:
    search. See ``scrape.resolver``.
 3. **Fandango** — a genuine cross-chain fallback, and the only option for a theatre
    with no ``chain_slug``. Note it is a *search* link: Fandango's own deep links
-   embed internal ids (``/the-odyssey-2026-236162/movie-times``) that cannot be
+   embed internal ids (``/the-odyssey-2026-241283/movie-overview``) that cannot be
    derived, so pretending to link straight to a showtime there would be a guess.
-   The query is scoped to the movie and theatre so the search lands usefully.
+   The query is the movie alone — adding the theatre name makes their search return
+   nothing at all (verified live).
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional
 from urllib.parse import quote_plus
@@ -34,12 +36,28 @@ CHAIN_LABELS = {
 }
 
 FANDANGO_SEARCH = "https://www.fandango.com/search?q={q}"
+# Fandango's location pages take a bare ZIP: /94103_movietimes (verified 200).
+FANDANGO_NEAR = "https://www.fandango.com/{zip}_movietimes"
+
+_ZIP_RE = re.compile(r"^\s*(\d{5})(?:-\d{4})?\s*$")
 
 
 def fandango_url(movie_title: str, theater_name: str = "") -> str:
-    """A Fandango search scoped to this movie (and theatre, when known)."""
-    q = " ".join(part for part in (movie_title or "", theater_name or "") if part).strip()
-    return FANDANGO_SEARCH.format(q=quote_plus(q or "movies"))
+    """A Fandango search for this movie.
+
+    Searching the movie ALONE is deliberate: adding the theatre name makes
+    Fandango return "no results" (verified against the live site — "The Odyssey AMC
+    Metreon 16" found nothing while "The Odyssey" listed the film). ``theater_name``
+    is accepted so callers don't have to care, and ignored.
+    """
+    del theater_name  # see docstring
+    return FANDANGO_SEARCH.format(q=quote_plus((movie_title or "").strip() or "movies"))
+
+
+def fandango_near_url(location: str) -> Optional[str]:
+    """Fandango's showtimes page for a ZIP, when the search location is one."""
+    m = _ZIP_RE.match(location or "")
+    return FANDANGO_NEAR.format(zip=m.group(1)) if m else None
 
 
 def chain_url(chain: str, chain_slug: str, start: datetime) -> Optional[str]:
