@@ -200,7 +200,11 @@
       var f = norm(fill);
       // An explicit "none" is decoration (icons, the screen arc), not a seat.
       if (f === 'none' || f === 'currentcolor') return null;
-      var m = f.match(/url\(#(.+)\)/);
+      // Match the gradient id on the RAW value: element ids are case-sensitive and
+      // React generates them with capitals (":R2339l9fjsqv7qbseja:"). Matching the
+      // lowercased string made every AMC seat unresolvable, which silently pushed
+      // classification onto wrapper backgrounds and inverted the whole map.
+      var m = String(fill).match(/url\(#(.+?)\)/);
       if (m) {
         var grad = null;
         try { grad = (svg || document).querySelector('#' + CSS.escape(m[1])); } catch (e) {}
