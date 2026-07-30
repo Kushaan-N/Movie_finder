@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<!--
+  Reproduces the STRUCTURE of AMC's real seat map as verified live on 2026-07-29,
+  so the in-page geometry extraction (app/scrape/geometry.py) can be exercised by
+  a real browser without hitting amctheatres.com.
+
+  Faithful to what actually matters:
+    * seats are small <svg> boxes positioned by layout (no row containers)
+    * NO text anywhere -- the real page draws labels as <path> glyphs
+    * NO data-* attributes, classes, or aria labels identifying seats
+    * availability lives only in the resolved gradient stop-colors:
+        available -> #555AAA / #2A1F63     occupied -> transparent
+
+  Layout: 3 rows x 10 seats. Row 3 (furthest from screen) has a run of 4 open
+  seats at indexes 2..5; rows 1-2 are fully occupied. One decorative non-seat
+  glyph is included to confirm it is ignored rather than counted.
+-->
+<html><head><title>Select Seats</title>
+<style>
+  body { margin: 0; background: #0b1020; }
+  .row { display: flex; gap: 6px; margin: 10px 20px; }
+  .seat { width: 28px; height: 28px; }
+</style>
+</head>
+<body>
+  <div id="map">
+    <div class="row" id="r1"></div>
+    <div class="row" id="r2"></div>
+    <div class="row" id="r3"></div>
+  </div>
+
+  <!-- A decorative glyph that is NOT a seat: fill "none" is in ignore_stop_colors. -->
+  <svg class="seat" id="decoration" viewBox="0 0 28 28"><path fill="none" d="M2 2h24v24H2z"/></svg>
+
+  <script>
+    // Build seats the way the real page does: one <svg> per seat, fill pointing at
+    // a per-seat gradient whose stop-colors encode availability.
+    const OPEN = ['#555AAA', '#2A1F63', '#555AAA'];
+    const TAKEN = ['transparent', 'transparent', 'transparent'];
+    let uid = 0;
+
+    function seat(open) {
+      const id = 'grad-' + (uid++);
+      const stops = (open ? OPEN : TAKEN)
+        .map((c, i) => `<stop offset="${i / 2}" stop-color="${c}"/>`).join('');
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'seat');
+      svg.setAttribute('viewBox', '0 0 28 28');
+      svg.innerHTML =
+        `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">${stops}</linearGradient></defs>` +
+        `<path fill="url(#${id})" d="M4 8h20v14H4z"/>`;
+      return svg;
+    }
+
+    const layout = [
+      Array.from({length: 10}, () => false),
+      Array.from({length: 10}, () => false),
+      Array.from({length: 10}, (_, i) => i >= 2 && i <= 5),
+    ];
+    layout.forEach((row, idx) => {
+      const host = document.getElementById('r' + (idx + 1));
+      row.forEach(open => host.appendChild(seat(open)));
+    });
+  </script>
+</body></html>
