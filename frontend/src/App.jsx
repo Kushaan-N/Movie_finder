@@ -36,6 +36,22 @@ export default function App() {
 
   const refreshSaved = () => api.listSaved().then(setSaved).catch(() => {});
 
+  // Apply a seat check read in the user's own browser to the showtime it belongs
+  // to, so the badge on that card reflects it instead of the verdict sitting off
+  // to one side.
+  const applySeatCheck = (key, seatCheck) => {
+    setResult((prev) =>
+      prev
+        ? {
+            ...prev,
+            showtimes: prev.showtimes.map((st) =>
+              st.key === key ? { ...st, seat_check: seatCheck } : st,
+            ),
+          }
+        : prev,
+    );
+  };
+
   const doSearch = async () => {
     if (!form.movie_title.trim()) {
       setError("Enter a movie title to search.");
@@ -132,7 +148,11 @@ export default function App() {
           </div>
         )}
 
-        <BrowserSeatCheck form={form} config={config} />
+        <BrowserSeatCheck
+          form={form}
+          showtimes={result?.showtimes || []}
+          onApply={applySeatCheck}
+        />
 
         <Results result={result} config={config} />
       </div>
