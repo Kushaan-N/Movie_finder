@@ -1,5 +1,5 @@
 {
-  "_comment": "Editable list of candidate theaters. 'chain' selects which seat-map parser and row normalizer to use. 'formats' are the confirmed formats available. Add/remove theaters freely; the backend resolves candidates from here when Google Places is not configured.",
+  "_comment": "Editable list of candidate theaters. 'chain' selects which seat-map parser and row normalizer to use. 'formats' are the confirmed formats available -- keep these honest, they are shown to users but no longer decide which theaters get queried. 'chain_slug' is the theater's path on its own chain website, used to resolve a showtime to its seat-selection page; all slugs below were verified on 2026-07-29. Add/remove theaters freely.",
   "theaters": [
     {
       "id": "amc-metreon-16",
@@ -8,8 +8,14 @@
       "address": "135 4th St #3000, San Francisco, CA 94103",
       "lat": 37.7841,
       "lng": -122.4033,
-      "formats": ["IMAX", "Dolby", "70mm IMAX", "Standard"],
-      "booking_base_url": "https://www.amctheatres.com"
+      "formats": [
+        "IMAX",
+        "Dolby",
+        "70mm IMAX",
+        "Standard"
+      ],
+      "booking_base_url": "https://www.amctheatres.com",
+      "chain_slug": "san-francisco/amc-metreon-16"
     },
     {
       "id": "amc-eastridge-15",
@@ -18,8 +24,13 @@
       "address": "2190 Eastridge Loop, San Jose, CA 95122",
       "lat": 37.3252,
       "lng": -121.8113,
-      "formats": ["IMAX", "Dolby", "Standard"],
-      "booking_base_url": "https://www.amctheatres.com"
+      "formats": [
+        "IMAX",
+        "Dolby",
+        "Standard"
+      ],
+      "booking_base_url": "https://www.amctheatres.com",
+      "chain_slug": "san-jose/amc-eastridge-15"
     },
     {
       "id": "regal-hacienda-crossings",
@@ -28,8 +39,13 @@
       "address": "5000 Dublin Blvd, Dublin, CA 94568",
       "lat": 37.7057,
       "lng": -121.8683,
-      "formats": ["IMAX", "ScreenX", "Standard"],
-      "booking_base_url": "https://www.regmovies.com"
+      "formats": [
+        "IMAX",
+        "ScreenX",
+        "Standard"
+      ],
+      "booking_base_url": "https://www.regmovies.com",
+      "chain_slug": "regal-hacienda-crossings-0347"
     },
     {
       "id": "cinemark-century-20-oakridge",
@@ -38,8 +54,12 @@
       "address": "925 Blossom Hill Rd, San Jose, CA 95123",
       "lat": 37.2519,
       "lng": -121.8459,
-      "formats": ["XD", "Standard"],
-      "booking_base_url": "https://www.cinemark.com"
+      "formats": [
+        "XD",
+        "Standard"
+      ],
+      "booking_base_url": "https://www.cinemark.com",
+      "chain_slug": "ca-san-jose/cinemark-century-oakridge-20-xd-and-screenx"
     },
     {
       "id": "cinemark-century-redwood-downtown",
@@ -48,8 +68,12 @@
       "address": "825 Middlefield Rd, Redwood City, CA 94063",
       "lat": 37.4863,
       "lng": -122.2311,
-      "formats": ["XD", "Standard"],
-      "booking_base_url": "https://www.cinemark.com"
+      "formats": [
+        "XD",
+        "Standard"
+      ],
+      "booking_base_url": "https://www.cinemark.com",
+      "chain_slug": "ca-redwood-city/cinemark-century-redwood-downtown-20-and-xd"
     }
   ]
 }
