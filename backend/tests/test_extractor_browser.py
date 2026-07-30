@@ -176,3 +176,34 @@ def test_prefers_a_strategy_that_distinguishes_two_states():
         "............",
         "............",
     ]
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_rejects_a_reading_whose_rows_are_not_auditorium_shaped():
+    """A strategy must not win by scoring scattered elements as one-seat rows.
+
+    Measured on AMC Eastridge 15: `interactive` collected 224 stray elements, scored
+    224 "rows" of a single seat, cleared the row-count threshold and beat the correct
+    `paint` reading. Rows in a real auditorium are several seats wide.
+    """
+    with serve_fixtures() as base:
+        # minRowWidth is raised above the fixture's 12-seat rows, so every strategy
+        # becomes implausible and the extractor must refuse outright.
+        res = _extract(f"{base}/interactive-seats", "{minSeats:20, minRows:3, minRowWidth:30}")
+
+    assert res["ok"] is False
+    assert res["rows"] == []
+    # It still reports what it saw, so the refusal is diagnosable.
+    assert res["stats"]["tried"]["interactive"]["seats"] >= 20
+    assert res["stats"]["tried"]["interactive"]["plausible"] is False
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_a_normal_map_is_still_auditorium_shaped():
+    """The plausibility rule must not reject real maps."""
+    with serve_fixtures() as base:
+        res = _extract(f"{base}/interactive-seats", "{minSeats:20, minRows:3}")
+
+    assert res["ok"] is True
+    assert res["stats"]["tried"]["interactive"]["plausible"] is True
+    assert res["stats"]["tried"]["interactive"]["medianWidth"] >= 4
