@@ -100,6 +100,7 @@ function ShowtimeCard({ st, canVerify }) {
         chain: st.chain,
         theater_id: st.theater_id,
         start_datetime: st.start_datetime,
+        movie_title: st.movie_title,
         seats_together: st.seat_check.seats_together_requested,
         min_row: st.seat_check.min_row_requested,
       });
