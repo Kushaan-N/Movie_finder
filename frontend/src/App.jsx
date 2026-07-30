@@ -5,6 +5,7 @@ import { defaultSearch } from "@/lib/defaults";
 import SearchForm from "@/components/SearchForm";
 import Results from "@/components/Results";
 import SavedSearches from "@/components/SavedSearches";
+import BrowserSeatCheck from "@/components/BrowserSeatCheck";
 
 export default function App() {
   const [form, setForm] = useState(defaultSearch());
@@ -130,6 +131,8 @@ export default function App() {
             <AlertCircle className="h-4 w-4" /> {error}
           </div>
         )}
+
+        <BrowserSeatCheck form={form} config={config} />
 
         <Results result={result} config={config} />
       </div>
