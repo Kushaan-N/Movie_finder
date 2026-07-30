@@ -324,7 +324,7 @@ export default function Results({ result, config }) {
         <Card key={theater.theater_id} className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-background/40 px-5 py-4">
             <div>
-              <h3 className="text-base font-semibold">{theater.theater_name}</h3>
+              <h2 className="text-base font-semibold">{theater.theater_name}</h2>
               <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                 <MapPin className="h-3.5 w-3.5" />
                 {theater.address || theater.chain}
