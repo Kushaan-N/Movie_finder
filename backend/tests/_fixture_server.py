@@ -13,6 +13,7 @@ tested rather than bypassed:
   * ``/showtimes/<id>/seats``  -> AMC SVG seat map (geometry strategy)
   * ``/regal-listing``         -> Regal theatre page (sold-out state only; its
                                   seat page is CAPTCHA-gated and unreachable)
+  * ``/interactive-seats``     -> seat map whose state is only enabled/disabled
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ _EXACT = {
     "/TicketSeatMap/": "cinemark_seatmap.html",
     "/amc-listing": "amc_listing.html",
     "/regal-listing": "regal_listing.html",
+    "/interactive-seats": "interactive_seatmap.html",
 }
 
 # /showtimes/<numeric id>/seats -> AMC's SVG-based map.
