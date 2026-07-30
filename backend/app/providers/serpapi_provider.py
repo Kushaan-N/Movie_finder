@@ -36,6 +36,7 @@ import httpx
 
 from ..config import get_settings
 from ..formats import format_matches
+from ..titles import titles_match as _titles_match
 from .base import ProviderQuery, ProviderShowtime, ShowtimeProvider
 
 logger = logging.getLogger("showtime_finder.serpapi")
@@ -52,8 +53,6 @@ _KM_TO_MI = 0.621371
 # tier allows 250 searches/hour, so a small cap is plenty and stays polite.
 _MAX_CONCURRENCY = 5
 
-# Words that carry no signal when comparing a requested title to Google's title.
-_TITLE_STOPWORDS = {"the", "a", "an"}
 
 
 def _parse_distance(text: str) -> float | None:
@@ -123,25 +122,6 @@ def _resolve_date(day_label: str, date_label: str, today: date) -> date | None:
     if candidate < today - timedelta(days=180):
         candidate = date(year + 1, month, dom)
     return candidate
-
-
-def _title_tokens(title: str) -> set[str]:
-    words = re.split(r"[^a-z0-9]+", (title or "").lower())
-    tokens = {w for w in words if w and w not in _TITLE_STOPWORDS}
-    return tokens or {w for w in words if w}
-
-
-def _titles_match(requested: str, actual: str) -> bool:
-    """Whether Google's movie title refers to the movie the user asked for.
-
-    Google decorates titles ("The Odyssey", "Dune: Part Two", "Wicked: For
-    Good"), so we compare on significant tokens and accept a subset match in
-    either direction rather than requiring string equality.
-    """
-    req, act = _title_tokens(requested), _title_tokens(actual)
-    if not req or not act:
-        return False
-    return req <= act or act <= req
 
 
 class SerpApiProvider(ShowtimeProvider):
