@@ -1,41 +1,76 @@
 <!DOCTYPE html>
-<html><head><title>Select Seats - Cinemark</title></head>
+<!--
+  Trimmed copy of Cinemark's REAL /TicketSeatMap/ markup, verified live on
+  2026-07-29 at Century Oakridge (TheaterId=477). The previous version of this
+  fixture used invented `.seat-row[data-availability]` markup that does not exist
+  on the site, so it validated nothing. The contract that actually holds:
+    * rows are `.seatRow` containers, DOM order = screen-first
+    * seats are <button available="True|False" seattype="seat|companion|wheelchair">
+    * the label lives in `.seatDesignation`
+    * `.seatBlank` marks a gap (aisle / no seat)
+  Seat numbers descend left-to-right on the real page (A20 is leftmost); that is
+  preserved here so ordering assumptions stay honest.
+-->
+<html><head><title>Cinemark - Reserve Your Seats</title></head>
 <body>
-  <div class="seatingChart">
-    <!-- Cinemark / Century / Tinseltown: numeric row labels, data-availability markers.
-         Rows front-to-back; a 5-block sits at physical row 7. -->
-    <div class="seat-row" data-row-number="1">
-      <div class="seat" data-seat-number="1" data-availability="taken"></div>
-      <div class="seat" data-seat-number="2" data-availability="available"></div>
+  <div id="seatMapContainer">
+
+    <div class="seatRow">
+      <span class="rowDesignation">A</span>
+      <button available="False" seattype="seat" class="seatUnavailable seatBlock">
+        <span class="seatArmLeft"></span><span class="seatDesignation">A20</span><span class="seatArmRight"></span>
+      </button>
+      <button available="False" seattype="seat" class="seatUnavailable seatBlock">
+        <span class="seatDesignation">A19</span>
+      </button>
+      <div class="seatBlank seatBlock"></div>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">A18</span>
+      </button>
+      <button available="False" seattype="seat" class="seatUnavailable seatBlock">
+        <span class="seatDesignation">A17</span>
+      </button>
     </div>
-    <div class="seat-row" data-row-number="2">
-      <div class="seat" data-seat-number="1" data-availability="available"></div>
-      <div class="seat" data-seat-number="2" data-availability="taken"></div>
+
+    <div class="seatRow">
+      <span class="rowDesignation">B</span>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">B20</span>
+      </button>
+      <button available="False" seattype="seat" class="seatUnavailable seatBlock">
+        <span class="seatDesignation">B19</span>
+      </button>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">B18</span>
+      </button>
     </div>
-    <div class="seat-row" data-row-number="3">
-      <div class="seat" data-availability="taken"></div>
-      <div class="seat" data-availability="taken"></div>
+
+    <!-- Row C (DOM index 2 = physical row 3): a run of 5 contiguous available. -->
+    <div class="seatRow">
+      <span class="rowDesignation">C</span>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">C20</span>
+      </button>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">C19</span>
+      </button>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">C18</span>
+      </button>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">C17</span>
+      </button>
+      <button available="True" seattype="seat" class="seatAvailable seatBlock">
+        <span class="seatDesignation">C16</span>
+      </button>
+      <!-- wheelchair/companion positions are ignored: not general seating -->
+      <button available="True" seattype="wheelchair" class="wheelchairAvailable seatBlock">
+        <span class="seatDesignation">C15</span>
+      </button>
+      <button available="True" seattype="companion" class="companionAvailable seatBlock">
+        <span class="seatDesignation">C14</span>
+      </button>
     </div>
-    <div class="seat-row" data-row-number="4">
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="taken"></div>
-    </div>
-    <div class="seat-row" data-row-number="5">
-      <div class="seat" data-availability="taken"></div>
-      <div class="seat" data-availability="available"></div>
-    </div>
-    <div class="seat-row" data-row-number="6">
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="taken"></div>
-    </div>
-    <!-- physical row 7 (DOM index 6): five contiguous available. -->
-    <div class="seat-row" data-row-number="7">
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="available"></div>
-      <div class="seat" data-availability="available"></div>
-    </div>
+
   </div>
 </body></html>
