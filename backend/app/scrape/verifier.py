@@ -131,7 +131,6 @@ class SeatVerifier:
         self._listing_cache: dict[tuple[str, str, str], tuple[float, Optional[str]]] = {}
         self._pw = None
         self._browser = None
-        self._context = None
 
     # --- availability ------------------------------------------------------ #
     def available(self) -> bool:
@@ -146,17 +145,15 @@ class SeatVerifier:
 
     # --- browser lifecycle ------------------------------------------------- #
     async def _ensure_browser(self):  # pragma: no cover - needs a real browser
-        if self._context is not None:
+        if self._browser is not None:
             return
         from playwright.async_api import async_playwright
 
         self._pw = await async_playwright().start()
         self._browser = await self._pw.chromium.launch(headless=True)
-        self._context = await self._browser.new_context(user_agent=_USER_AGENT)
 
     async def _close(self):  # pragma: no cover - needs a real browser
         for closer in (
-            getattr(self._context, "close", None),
             getattr(self._browser, "close", None),
             getattr(self._pw, "stop", None),
         ):
@@ -165,7 +162,7 @@ class SeatVerifier:
                     await closer()
                 except Exception:
                     pass
-        self._pw = self._browser = self._context = None
+        self._pw = self._browser = None
 
     # --- the one browser seam (monkeypatched in tests) --------------------- #
     async def _fetch_page(
@@ -176,9 +173,16 @@ class SeatVerifier:
         ``extraction`` is the in-page geometry payload, present only when
         ``extract`` is True. On failure html is None and reason explains why.
         """
+        # Each load gets its OWN browser context, and that is a correctness fix
+        # rather than hygiene: AMC serves 403 for the SPA's JS chunks on a second
+        # navigation from the same context, so the seat page arrived as an unbooted
+        # shell (empty <title>, 3 svgs) and looked like "the map didn't load".
+        # Reproduced against the live site; a fresh context renders all 198 seats.
+        # Contexts are cheap and the browser stays shared.
         # pragma: no cover below — exercised only with a live browser.
         await self._ensure_browser()  # pragma: no cover
-        page = await self._context.new_page()  # pragma: no cover
+        context = await self._browser.new_context(user_agent=_USER_AGENT)  # pragma: no cover
+        page = await context.new_page()  # pragma: no cover
         try:  # pragma: no cover
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
@@ -241,7 +245,10 @@ class SeatVerifier:
         except Exception as exc:  # pragma: no cover
             return None, None, f"Could not load seat page: {exc}"
         finally:  # pragma: no cover
-            await page.close()
+            try:
+                await page.close()
+            finally:
+                await context.close()
 
     # --- robots ------------------------------------------------------------ #
     async def _robots_ok(self, url: str) -> tuple[bool, Optional[str]]:
