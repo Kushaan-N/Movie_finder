@@ -56,7 +56,8 @@ READ_APP_JS = """() => {
       verdict: g(/No \\d+-block|\\d+ together|Check manually/),
       stats: g(/\\d+ of \\d+ seats free[^\\n]*/),
       applyOptions: sel ? sel.options.length - 1 : 0,
-      manualBadges: (t.match(/Check manually/g) || []).length,
+      // The unverified-seats badge. Keep in sync with SeatBadge in Results.jsx.
+      manualBadges: (t.match(/Seats unknown/g) || []).length,
     };
 }"""
 
