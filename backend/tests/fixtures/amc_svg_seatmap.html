@@ -29,8 +29,16 @@
     <div class="row" id="r3"></div>
   </div>
 
-  <!-- A decorative glyph that is NOT a seat: fill "none" is in ignore_stop_colors. -->
+  <!-- A decorative glyph that is NOT a seat: an explicit fill of "none" means the
+       element declares no paint, so it must be skipped rather than counted. -->
   <svg class="seat" id="decoration" viewBox="0 0 28 28"><path fill="none" d="M2 2h24v24H2z"/></svg>
+
+  <!-- Page chrome at seat size, ABOVE nothing but still present: proves that
+       narrow non-seat clusters are dropped instead of shifting row numbers. -->
+  <div class="row" id="chrome">
+    <div style="width:24px;height:24px;background:#1ab7fd"></div>
+    <div style="width:24px;height:24px;background:#1ab7fd"></div>
+  </div>
 
   <script>
     // Build seats the way the real page does: one <svg> per seat, fill pointing at
