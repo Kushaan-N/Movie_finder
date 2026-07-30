@@ -5,9 +5,9 @@ Only the listing host is swapped (localhost fixtures instead of a chain's site) 
 resolution, rendering, extraction, row normalization and the seat check are all
 real. Skipped automatically if Playwright/Chromium isn't installed.
 
-This deliberately covers both working strategies at once plus the blocked chain,
-because they fail in different ways: Cinemark parses attributes, AMC recovers
-seats from SVG geometry, and Regal cannot be verified at all.
+This deliberately covers every strategy at once, because they answer in different
+ways: AMC recovers seats from SVG geometry, Regal can only prove sold-out state
+from its listing, and Cinemark's seat map is policy-disabled.
 """
 import asyncio
 import importlib.util
@@ -23,11 +23,17 @@ from tests._fixture_server import serve_fixtures
 
 _HAS_PW = importlib.util.find_spec("playwright") is not None
 
-# Both listing fixtures expose an 11:00pm showing.
+# The AMC and Cinemark listing fixtures expose an 11:00pm showing.
 START = datetime(2026, 8, 1, 23, 0)
+# The Regal fixture's sold-out showing for The Odyssey is 10:30pm.
+REGAL_SOLD_OUT = datetime(2026, 8, 1, 22, 30)
 NO_SUCH_START = datetime(2026, 8, 1, 4, 5)  # nothing in the listings is near this
 
-_LISTING_PATH = {"cinemark": "/cinemark-listing", "amc": "/amc-listing"}
+_LISTING_PATH = {
+    "cinemark": "/cinemark-listing",
+    "amc": "/amc-listing",
+    "regal": "/regal-listing",
+}
 
 
 def _st(key, chain, theater_id, start=START):
@@ -60,32 +66,33 @@ def test_real_browser_enrichment_across_strategies(monkeypatch):
             ),
         )
         showtimes = [
-            _st("cinemark", "cinemark", "cinemark-century-20-oakridge"),
             _st("amc", "amc", "amc-metreon-16"),
-            _st("regal", "regal", "regal-hacienda-crossings"),
-            _st("miss", "cinemark", "cinemark-century-20-oakridge", start=NO_SUCH_START),
+            # 10:30pm is sold out for The Odyssey in the Regal listing fixture.
+            _st("regal", "regal", "regal-hacienda-crossings", start=REGAL_SOLD_OUT),
+            _st("cinemark", "cinemark", "cinemark-century-20-oakridge"),
+            _st("miss", "amc", "amc-metreon-16", start=NO_SUCH_START),
         ]
         verifier = SeatVerifier()
         assert verifier.available(), "seat verification should be available with Playwright installed"
 
         verified, notes = asyncio.run(verifier.enrich(showtimes, seats_together=4, min_row=1))
 
-    assert verified == 2  # cinemark + amc; regal is impossible, "miss" unresolvable
+    assert verified == 1  # only AMC yields a real seat map
     by_key = {st.key: st for st in showtimes}
-
-    # Cinemark (dom strategy): run of 5 in row C = physical row 3.
-    assert by_key["cinemark"].seat_check.status == "match"
-    assert by_key["cinemark"].seat_check.best_block_row.physical_row == 3
-    assert by_key["cinemark"].seat_check.best_block_size == 5
 
     # AMC (geometry strategy): run of 4 in the last of 3 rows.
     assert by_key["amc"].seat_check.status == "match"
     assert by_key["amc"].seat_check.best_block_row.physical_row == 3
     assert by_key["amc"].seat_check.best_block_size == 4
 
-    # Regal: never verified, and the reason is surfaced rather than swallowed.
-    assert by_key["regal"].seat_check.status == "check_manually"
-    assert any("captcha" in n.lower() for n in notes)
+    # Regal (capacity strategy): sold out is a definitive no, not an unknown.
+    assert by_key["regal"].seat_check.status == "no_match"
+    assert "sold out" in (by_key["regal"].seat_check.reason or "").lower()
+    assert any("sold out" in n.lower() for n in notes)
+
+    # Cinemark: robots.txt forbids its seat map, and that is said plainly.
+    assert by_key["cinemark"].seat_check.status == "check_manually"
+    assert any("robots.txt" in n.lower() for n in notes)
 
     # A showtime absent from the listing never fabricates a match.
     assert by_key["miss"].seat_check.status == "check_manually"
@@ -102,11 +109,8 @@ def test_real_browser_honors_min_row(monkeypatch):
         monkeypatch.setattr(
             resolver, "listing_url", lambda chain, slug, day: f"{base}{_LISTING_PATH[chain]}"
         )
-        sts = [
-            _st("cinemark", "cinemark", "cinemark-century-20-oakridge"),
-            _st("amc", "amc", "amc-metreon-16"),
-        ]
+        sts = [_st("amc", "amc", "amc-metreon-16")]
         asyncio.run(SeatVerifier().enrich(sts, seats_together=4, min_row=4))
 
-    # Both maps' only qualifying blocks sit at physical row 3.
+    # The map's only qualifying block sits at physical row 3.
     assert all(st.seat_check.status == "no_match" for st in sts)

@@ -33,19 +33,19 @@ def test_verify_disabled_returns_available_false(monkeypatch):
     assert body["seat_check"]["status"] == "check_manually"
 
 
-def test_regal_reports_captcha_rather_than_pretending(monkeypatch):
-    """Regal is CAPTCHA-gated; the endpoint must say so instead of failing vaguely."""
+def test_disabled_chain_reports_policy_rather_than_pretending(monkeypatch):
+    """Cinemark's seat map is robots-disallowed; the endpoint must say so."""
     monkeypatch.setattr(get_settings(), "enable_seat_verification", True, raising=False)
     client = TestClient(app)
     r = client.post(
         "/api/verify-seats",
-        json={"chain": "regal", "theater_id": "regal-hacienda-crossings",
+        json={"chain": "cinemark", "theater_id": "cinemark-century-20-oakridge",
               "start_datetime": _START},
     )
     assert r.status_code == 200
     body = r.json()
     assert body["seat_check"]["status"] == "check_manually"
-    assert "captcha" in (body["reason"] or "").lower()
+    assert "robots.txt" in (body["reason"] or "").lower()
 
 
 def _point_resolver_at(monkeypatch, base: str, path: str):
@@ -55,6 +55,10 @@ def _point_resolver_at(monkeypatch, base: str, path: str):
 
 @pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
 def test_cinemark_dom_strategy_end_to_end(monkeypatch):
+    """Cinemark is policy-disabled in production; re-enabled here so the `dom`
+    strategy stays proven for the day that policy changes."""
+    from app.scrape.seatmap import _load_selectors
+    monkeypatch.delitem(_load_selectors()["chains"]["cinemark"], "disabled", raising=False)
     s = get_settings()
     monkeypatch.setattr(s, "enable_seat_verification", True, raising=False)
     monkeypatch.setattr(s, "scrape_rate_limit_per_sec", 50, raising=False)
