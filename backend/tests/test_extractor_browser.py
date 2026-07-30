@@ -102,3 +102,46 @@ def test_reports_which_strategy_and_colour_source_were_used():
     # AMC draws a taken seat as a gradient whose stops are all transparent.
     assert res["stats"]["colour_source"] == "painted-vs-unpainted"
     assert res["url"].endswith("/seats")
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_reads_a_map_whose_state_is_only_enabled_or_disabled():
+    """Free seats are live controls; taken ones are disabled or aria-disabled.
+
+    This is the strategy that has to carry chains whose seat markup could not be
+    inspected in advance, so it is exercised on its own terms rather than assumed.
+    """
+    with serve_fixtures() as base:
+        res = _extract(f"{base}/interactive-seats", "{minSeats:20, minRows:3}")
+
+    assert res["ok"] is True
+    assert res["strategy"] == "interactive"
+    # 4 rows x 12 with an aisle after seat 6. Row 3 has six free seats, but five of
+    # them sit before the aisle and one after.
+    assert _render(res["rows"]) == [
+        "......_......",
+        "O....._.....O",
+        ".OOOOO_O.....",
+        "......_......",
+    ]
+    assert res["stats"]["seats_found"] == 48
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="Playwright not installed")
+def test_aisle_splits_a_run_in_the_interactive_map():
+    """Row 3 has six free seats straddling an aisle; the run must not span it."""
+    with serve_fixtures() as base:
+        res = _extract(f"{base}/interactive-seats", "{minSeats:20, minRows:3}")
+
+    row3 = res["rows"][2]
+    runs, cur = [], 0
+    for cell in row3:
+        if cell["available"] and not cell["gap"]:
+            cur += 1
+        else:
+            runs.append(cur)
+            cur = 0
+    runs.append(cur)
+    free = sum(1 for c in row3 if c["available"] and not c["gap"])
+    assert free == 6            # six free seats in the row...
+    assert max(runs) == 5       # ...but never a 6-run, because an aisle divides them
