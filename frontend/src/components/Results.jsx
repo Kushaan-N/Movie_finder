@@ -86,8 +86,11 @@ function ShowtimeCard({ st, canVerify }) {
   const [err, setErr] = useState(null);
 
   const seat = verified?.seat_check || st.seat_check;
+  // The seat page is resolved server-side from theater + start time, so a
+  // booking_url is no longer required to offer verification (providers only give
+  // google.com links anyway).
   const showVerifyBtn =
-    canVerify && !verified && st.seat_check.status === "check_manually" && st.booking_url;
+    canVerify && !verified && st.seat_check.status === "check_manually";
 
   const runVerify = async () => {
     setBusy(true);
@@ -95,10 +98,10 @@ function ShowtimeCard({ st, canVerify }) {
     try {
       const res = await api.verifySeats({
         chain: st.chain,
-        booking_url: st.booking_url,
+        theater_id: st.theater_id,
+        start_datetime: st.start_datetime,
         seats_together: st.seat_check.seats_together_requested,
         min_row: st.seat_check.min_row_requested,
-        theater_id: st.theater_id,
       });
       setVerified(res);
     } catch (e) {
