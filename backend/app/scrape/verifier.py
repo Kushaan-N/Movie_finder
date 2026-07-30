@@ -320,7 +320,8 @@ class SeatVerifier:
         return html, listing, None
 
     async def _resolve_seat_url(
-        self, chain: str, theater_id: str, start: datetime, cfg: dict
+        self, chain: str, theater_id: str, start: datetime, cfg: dict,
+        movie_title: str = "",
     ) -> tuple[Optional[str], Optional[str]]:
         """Find the chain's seat URL for a showtime. Returns (url, reason)."""
         if not resolver.supports(chain):
@@ -329,9 +330,14 @@ class SeatVerifier:
         if html is None:
             return None, reason
 
-        url = resolver.resolve_from_listing(chain, html or "", start, base=listing)
+        url = resolver.resolve_from_listing(
+            chain, html or "", start, base=listing, movie_title=movie_title
+        )
         if not url:
-            return None, "No matching showtime found on the chain's listing page"
+            named = f" for '{movie_title}'" if movie_title else ""
+            return None, (
+                f"No showtime{named} at that time on the chain's listing page"
+            )
         return url, None
 
     # --- extraction -------------------------------------------------------- #
@@ -376,7 +382,9 @@ class SeatVerifier:
                 or f"Seat verification is not possible for chain '{chain}'",
             )
 
-        seat_url, reason = await self._resolve_seat_url(chain, theater_id, start, cfg)
+        seat_url, reason = await self._resolve_seat_url(
+            chain, theater_id, start, cfg, movie_title
+        )
         if not seat_url:
             return SeatMapParseResult(None, reason=reason)
 
