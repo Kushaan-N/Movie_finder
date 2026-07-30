@@ -272,14 +272,23 @@ def verify_seats_from_grid(req: GridSeatCheckRequest) -> VerifySeatsResponse:
         for idx, row in enumerate(rows)
     ]
     total = sum(len(r.seats_available) for r in rows)
+    free = sum(sum(r.seats_available) for r in rows)
+    caution = None
+    if total and (free == 0 or free == total):
+        caution = (
+            "Every seat read as the same state — that is either a genuinely "
+            "sold-out (or empty) house, or the reader couldn't tell them apart. "
+            "Compare the grid with the map on screen."
+        )
     return VerifySeatsResponse(
         available=True,
         seat_check=check,
         grid=grid,
         stats={
             "seats_found": total,
-            "available_found": sum(sum(r.seats_available) for r in rows),
+            "available_found": free,
             "rows_found": len(rows),
+            "caution": caution,
             "strategy": req.strategy,
             "source": "browser",
             "source_url": req.source_url,
