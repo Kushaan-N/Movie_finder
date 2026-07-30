@@ -99,7 +99,7 @@ def geocode(location: str) -> Optional[tuple[float, float]]:
 
 
 def candidate_theaters(
-    location: str, radius_miles: float, fmt: str
+    location: str, radius_miles: float, formats: str | list[str]
 ) -> list[tuple[Theater, Optional[float]]]:
     """Return (theater, distance_miles) within radius, optionally format-filtered.
 
@@ -107,10 +107,12 @@ def candidate_theaters(
     theaters (distance filtering is simply skipped rather than failing).
     """
     origin = geocode(location)
+    requested = [formats] if isinstance(formats, str) else formats
+    requested = [f for f in requested if f and f.lower() != "any"]
     theaters = load_theaters()
     out: list[tuple[Theater, Optional[float]]] = []
     for t in theaters:
-        if fmt and fmt.lower() not in ("any", "") and fmt not in t.formats:
+        if requested and not any(f.lower() in {tf.lower() for tf in t.formats} for f in requested):
             continue
         dist: Optional[float] = None
         if origin and t.lat is not None and t.lng is not None:
