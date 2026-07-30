@@ -28,11 +28,12 @@ auth later is additive, not a rewrite.
   that are new since the last run.
 - Seat-check status badges: 🟢 match / 🟡 check manually / 🔴 no block — and it
   **never fabricates** a match when a seat map can't be parsed.
-- **Playwright seat verification**: reads AMC's real seat map and upgrades "check
-  manually" into a real match/no-match with the physical row. Regal yields sold-out
-  state only (its seat page is CAPTCHA-gated) and Cinemark none (its robots.txt
-  disallows the seat map) — each says which and why. Rate-limited, robots-aware,
-  canvas/login-wall safe, with an offline harness to re-verify against real pages.
+- **Seat verification, two ways.** Server-side (Playwright) reads AMC's real seat map
+  and upgrades "check manually" into a match/no-match with the physical row; Regal
+  yields sold-out state only (CAPTCHA-gated seat page) and Cinemark none (robots.txt
+  disallows it), each saying which and why. **Browser-assisted** covers all three: a
+  bookmarklet reads the seat map from a page you opened and hands the grid back.
+  Rate-limited, robots-aware, canvas/login-wall safe.
 - **Radius filtering on live data**: SerpApi's per-theater distance is parsed and
   applied to the radius, not just theaters matched to `theaters.json`.
 - **Short-TTL search cache** (default 5 min, `SEARCH_CACHE_TTL_SEC`) to conserve the
@@ -183,6 +184,8 @@ Each chain was checked against its live seat page on **2026-07-29**. They differ
 enough that one parser cannot cover them, and two of the three cannot be automated
 at all. This is the honest state, not a to-do list:
 
+Server-side, with `ENABLE_SEAT_VERIFICATION=true`:
+
 | Chain | What you get | Why |
 |---|---|---|
 | **AMC** | ✅ **Full seat map** | Seat page needs no login and its `robots.txt` permits it. No `<canvas>` — but also no seat attributes and **no `<text>` at all** (labels are SVG `<path>` glyphs), so seats are recovered from layout **geometry** plus resolved **gradient fills**. |
@@ -209,11 +212,45 @@ So there is no licensed path to seat availability for these chains. The AMC layo
 API is still worth a vendor key if you want exact row/seat labels to cross-check
 row normalization — but it cannot tell you what's free.
 
-### Getting the exact map anyway: browser-assisted checking
+### Browser-assisted seat check — the one route that works everywhere
 
-Because *your own browsing* is not automated crawling, and a CAPTCHA is no obstacle
-when a human is present, the one approach that works for all three chains is to read
-the seat map from a page **you** opened. See "Browser-assisted seat check" below.
+Your own browsing isn't automated crawling, and a CAPTCHA is no obstacle when a
+human is present. So the seat map is read from a page **you** opened:
+
+1. Install the bookmarklet: **`/api/seat-bookmarklet/setup`** (drag the link to your
+   bookmarks bar).
+2. Open a showtime's booking link, go to its **seat-selection** step, let the seats
+   draw.
+3. Click **Check seats**. The grid comes back to the app, which applies your
+   `seats_together` and `min_row` rules and shows the map for comparison.
+
+The extractor (`backend/app/scrape/seat_extract.js`) is deliberately chain-agnostic,
+because two of the three seat pages can't be inspected by automation to build
+selectors from. It tries three independent strategies and reports which fired:
+
+| Strategy | Signal | Seen on |
+|---|---|---|
+| `attr` | an explicit availability attribute/class | Cinemark (`available="True"`) |
+| `interactive` | seat is a live control; taken seats are `disabled` | Regal-style listings |
+| `paint` | availability exists only visually | AMC (SVG gradient stop-colors) |
+
+Rows come from **vertical overlap** of seat boxes, which is the one thing every seat
+map shares and gives physical screen-first order directly — exactly what `min_row`
+means. Aisles are detected from anomalous x-spacing so a run can't span one. For
+`paint`, which colour means "free" is taken from the page's **own legend**
+("Available"/"Occupied" next to a swatch) rather than guessed, falling back to a
+painted-vs-unpainted split and then to saturation.
+
+Verified against AMC's live seat map: 190 seats, 9 rows, **45 available**, matching a
+screenshot of the same map — and the generic extractor agrees with the dedicated
+server-side one. Against Cinemark's real markup it reads the grid exactly.
+
+> **Why a bookmarklet and not a POST from the page?** Chrome's Private Network
+> Access blocks an https page from fetching `127.0.0.1` — measured on AMC's seat
+> page, where the request hung until aborted even with permissive CORS and
+> `Access-Control-Allow-Private-Network`. So the grid is handed over by *navigation*
+> (a URL fragment) with a clipboard copy as fallback, and the extractor is inlined
+> rather than loaded from localhost, for the same reason.
 
 ### How a showtime becomes a seat map
 
