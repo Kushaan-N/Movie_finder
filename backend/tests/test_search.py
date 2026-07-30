@@ -41,6 +41,47 @@ def test_demo_search_runs_end_to_end_without_keys():
             assert st.start_datetime.time() >= time(18, 30)
 
 
+def test_multiple_formats_use_or_matching(monkeypatch):
+    clear_search_cache()
+    from app.providers.base import ProviderShowtime
+
+    async def fake_fetch(self, query):
+        assert query.fmt == "Any"
+        return [
+            ProviderShowtime(theater_name="AMC Metreon 16", movie_title="M", format=fmt,
+                             start_datetime=datetime(2026, 7, 27, 20, 0))
+            for fmt in ("IMAX", "Dolby", "Standard")
+        ]
+
+    monkeypatch.setattr(search_mod.DemoProvider, "fetch", fake_fetch)
+    req = SearchRequest(
+        movie_title="M", location="94103", formats=["IMAX", "Dolby"],
+        date_from="2026-07-27", date_to="2026-07-27",
+    )
+    res = asyncio.run(run_search(req, use_cache=False))
+    assert {showtime.format for showtime in res.showtimes} == {"IMAX", "Dolby"}
+
+
+def test_legacy_single_format_still_filters(monkeypatch):
+    clear_search_cache()
+    from app.providers.base import ProviderShowtime
+
+    async def fake_fetch(self, query):
+        return [
+            ProviderShowtime(theater_name="AMC Metreon 16", movie_title="M", format=fmt,
+                             start_datetime=datetime(2026, 7, 27, 20, 0))
+            for fmt in ("IMAX", "Standard")
+        ]
+
+    monkeypatch.setattr(search_mod.DemoProvider, "fetch", fake_fetch)
+    req = SearchRequest(
+        movie_title="M", location="94103", format="IMAX",
+        date_from="2026-07-27", date_to="2026-07-27",
+    )
+    res = asyncio.run(run_search(req, use_cache=False))
+    assert {showtime.format for showtime in res.showtimes} == {"IMAX"}
+
+
 def test_radius_filter_uses_provider_distance(monkeypatch):
     clear_search_cache()
     from app.providers.base import ProviderShowtime
@@ -59,6 +100,57 @@ def test_radius_filter_uses_provider_distance(monkeypatch):
     res = asyncio.run(run_search(req, use_cache=False))
     names = {s.theater_name for s in res.showtimes}
     assert names == {"Near"}  # Far (50mi) filtered out by the 10mi radius
+
+
+def test_serpapi_path_returns_showtimes_end_to_end(monkeypatch, configure_provider):
+    """The serpapi provider wins when configured, and its rows survive the pipeline.
+
+    Guards the regression where the provider fanned out correctly but the parser
+    read the wrong response shape and every search came back empty.
+    """
+    clear_search_cache()
+    configure_provider(serpapi_key="test-key")
+
+    today = datetime.now().date()
+
+    async def fake_request(self, q, location):
+        # One call per candidate theater, keyed on the theater name.
+        assert "showtimes" not in q
+        return {"showtimes": [{"day": "Today", "movies": [
+            {"name": "The Odyssey", "link": "http://book", "showing": [
+                {"type": "IMAX 70mm", "time": ["10:00pm"]},
+            ]},
+        ]}]}
+
+    monkeypatch.setattr(search_mod.SerpApiProvider, "_request", fake_request)
+    req = SearchRequest(
+        movie_title="The Odyssey", location="94103", radius_miles=30,
+        date_from=today.isoformat(), date_to=today.isoformat(),
+    )
+    res = asyncio.run(run_search(req, use_cache=False))
+
+    assert res.meta.provider_used == "serpapi"
+    assert res.meta.showtimes_returned > 0
+    assert {s.format for s in res.showtimes} == {"70mm IMAX"}
+    assert all(s.movie_title == "The Odyssey" for s in res.showtimes)
+
+
+def test_serpapi_empty_result_note_names_the_theaters(monkeypatch, configure_provider):
+    """An empty result should explain what was actually searched, not guess at ZIPs."""
+    clear_search_cache()
+    configure_provider(serpapi_key="test-key")
+
+    async def fake_request(self, q, location):
+        return {"showtimes": []}
+
+    monkeypatch.setattr(search_mod.SerpApiProvider, "_request", fake_request)
+    req = SearchRequest(movie_title="Nonexistent Film", location="94103", radius_miles=30)
+    res = asyncio.run(run_search(req, use_cache=False))
+
+    assert res.meta.showtimes_returned == 0
+    note = " ".join(res.meta.notes)
+    assert "Nonexistent Film" in note
+    assert "AMC Metreon 16" in note  # names a theater it actually looked at
 
 
 def test_cache_hit_and_bypass():
