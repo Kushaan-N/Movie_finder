@@ -173,3 +173,6 @@ class VerifySeatsResponse(BaseModel):
     grid: list[SeatGridRow] = Field(default_factory=list)
     stats: dict = Field(default_factory=dict)
     reason: Optional[str] = None
+    # The chain's page for this exact showtime, when it could be resolved. Handed
+    # back even if parsing failed, since it saves the user finding it themselves.
+    seat_url: Optional[str] = None
