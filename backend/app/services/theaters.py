@@ -28,6 +28,9 @@ class Theater:
     lng: Optional[float]
     formats: list[str]
     booking_base_url: str
+    # Path to this theater on its own chain website, used to resolve a showtime to
+    # its seat-selection page (SerpApi only hands back google.com links).
+    chain_slug: str = ""
 
 
 @lru_cache
@@ -51,6 +54,7 @@ def load_theaters() -> list[Theater]:
                 lng=t.get("lng"),
                 formats=t.get("formats", []),
                 booking_base_url=t.get("booking_base_url", ""),
+                chain_slug=t.get("chain_slug", ""),
             )
         )
     return out
