@@ -32,6 +32,14 @@ auth later is additive, not a rewrite.
   search page, so each card instead opens the chain's own page for that theatre and
   date — where the ticket is actually sold — with a Fandango link alongside. See
   "Where a showtime links to" below.
+- **Results are ordered by how far you'd travel**, nearest theatre first, then by name
+  and start time — so the closest option is the thing you read first, not whatever
+  order the provider happened to return.
+- **Each action appears once, at the level it applies to.** Directions belong to a
+  theatre, "Open at AMC"/Fandango belong to a theatre *and date*, so they sit on
+  those headers instead of repeating on every card. A showtime card carries only
+  what is specific to that showtime: its seat check and a calendar link. See
+  "Reading the results" below.
 - **Seat verification, two ways.** Server-side (Playwright) reads AMC's real seat map
   and upgrades "check manually" into a match/no-match with the physical row; Regal
   yields sold-out state only (CAPTCHA-gated seat page) and Cinemark none (robots.txt
@@ -172,6 +180,36 @@ respects `robots.txt`.
 
 ---
 
+## Reading the results
+
+Results nest **theatre → date → showtime**, and each action lives at the level it
+actually varies with:
+
+| Level | Carries | Why there |
+|---|---|---|
+| Theatre | address, distance, chain, **Directions**, and one line on what seat data this chain can give | An address and a driving route don't change between showings |
+| Date | **Open at AMC / Cinemark / Regal**, **Fandango** | The chain's page is per theatre *and* date; every showtime on that row would link to the identical URL |
+| Showtime | time, format, seat badge, **Check seats**, **Calendar**, and — once verified — the seat grid and a link to that showtime's own seat map | These are the only things that differ per showing |
+
+That started as de-duplication and turned into a correctness point: repeating
+"Open at AMC" on eight cards implied eight destinations when there was one. The
+same reasoning covers the explanation of a chain's seat-data limits — when every
+showtime at a theatre shares a reason ("Cinemark's robots.txt disallows their seat
+map"), it is stated once on the theatre, not eight times.
+
+The browser-assisted panel is collapsed by default — it is occasional-use, and
+expanded it pushed actual results below the fold. It opens itself, and scrolls
+into view, when a bookmarklet handoff arrives (that lands in a *new tab*, so the
+verdict would otherwise appear somewhere you'd have to hunt for).
+
+Nothing in the UI uses the same words for two different actions: the per-showtime
+button is **Check seats** (server-side verification of *that* showing), while the
+panel is **Read a seat map from your own browser** and its bookmarklet is **Read
+seats**. A test pins that wording — during a UI run a click aimed at a card's
+button hit the panel's toggle instead, and the request never fired.
+
+---
+
 ## Where a showtime links to
 
 A provider hands back a `google.com/search` URL, which is a search results page, not
@@ -254,7 +292,7 @@ human is present. So the seat map is read from a page **you** opened:
    bookmarks bar).
 2. Open a showtime's booking link, go to its **seat-selection** step, let the seats
    draw.
-3. Click **Check seats**. The grid comes back to the app, which applies your
+3. Click **Read seats**. The grid comes back to the app, which applies your
    `seats_together` and `min_row` rules and shows the map for comparison.
 
 The extractor (`backend/app/scrape/seat_extract.js`) is deliberately chain-agnostic,
