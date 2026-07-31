@@ -298,3 +298,21 @@ def test_showtimes_stay_chronological_within_a_theater(monkeypatch):
         use_cache=False,
     ))
     assert [s.start_datetime.hour for s in res.showtimes] == [18, 20, 21]
+
+
+def test_unplaceable_location_says_the_radius_did_not_apply():
+    # A location we can't geocode doesn't fail the search -- it stops bounding it,
+    # so the radius silently does nothing. Showing "within 25 mi" while including
+    # theaters 50 miles away would be a lie the user has no way to catch.
+    clear_search_cache()
+    res = asyncio.run(run_search(SearchRequest(movie_title="Any", location="Timbuktu",
+                                               radius_miles=25)))
+    note = " ".join(res.meta.notes)
+    assert "Timbuktu" in note and "radius was not applied" in note
+
+
+def test_a_placeable_location_does_not_warn():
+    clear_search_cache()
+    res = asyncio.run(run_search(SearchRequest(movie_title="Any", location="San Francisco, CA",
+                                               radius_miles=25)))
+    assert "radius was not applied" not in " ".join(res.meta.notes)
