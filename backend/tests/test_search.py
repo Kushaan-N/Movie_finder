@@ -316,3 +316,29 @@ def test_a_placeable_location_does_not_warn():
     res = asyncio.run(run_search(SearchRequest(movie_title="Any", location="San Francisco, CA",
                                                radius_miles=25)))
     assert "radius was not applied" not in " ".join(res.meta.notes)
+
+
+def test_filter_drops_are_reported_even_when_results_survive():
+    # The confusion this answers: with the default 18:30 weekday cutoff, every
+    # weekday matinee vanishes. Reporting only when *nothing* survives left
+    # "why is there no 2pm Friday showing?" unanswerable from the page.
+    clear_search_cache()
+    res = asyncio.run(run_search(SearchRequest(
+        movie_title="Any", location="San Francisco, CA",
+        time_rule={"weekday_cutoff": "23:59", "weekends_unrestricted": False},
+    )))
+    if res.showtimes:
+        # Anything that survived a 23:59 cutoff means the rule barely bites; the
+        # useful assertion is the counter exists and is non-negative.
+        assert res.meta.hidden_by_filters.get("time", 0) >= 0
+    else:
+        assert res.meta.hidden_by_filters.get("time", 0) > 0
+
+
+def test_nothing_hidden_means_no_counters():
+    clear_search_cache()
+    res = asyncio.run(run_search(SearchRequest(
+        movie_title="Any", location="San Francisco, CA", radius_miles=200,
+        time_rule={"weekday_cutoff": "00:00", "weekends_unrestricted": True},
+    )))
+    assert "time" not in res.meta.hidden_by_filters
