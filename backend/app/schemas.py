@@ -54,6 +54,11 @@ class SeatCheck(BaseModel):
     # Best contiguous block we could verify, if any.
     best_block_size: Optional[int] = None
     best_block_row: Optional[RowInterpretation] = None
+    # The best block anywhere on the map, ignoring min_row. Lets the UI distinguish
+    # "this showing is too full" from "your minimum row excluded the free seats" --
+    # the same red badge, but opposite advice.
+    best_block_any_row_size: Optional[int] = None
+    best_block_any_row: Optional[RowInterpretation] = None
     reason: Optional[str] = None  # why "check_manually" (canvas, login wall...)
     # How full the showing is, from the chain's own listing page — a much cheaper
     # signal than a seat map (one load per theatre/date, not per showing).
