@@ -13,6 +13,9 @@ export default function App() {
   const [formats, setFormats] = useState(["Any"]);
   const [config, setConfig] = useState(null);
   const [result, setResult] = useState(null);
+  const [occupancyBusy, setOccupancyBusy] = useState(false);
+  // Guards against a slow occupancy reply landing on a newer search's results.
+  const searchToken = useRef(0);
   const [saved, setSaved] = useState([]);
   const [activeSavedId, setActiveSavedId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -61,6 +64,66 @@ export default function App() {
     );
   };
 
+  // Fill in how full each showing is, after results are already on screen.
+  //
+  // This is a second request rather than part of the search because it costs a
+  // real page load per theatre and date. Search stays as fast as it was, and
+  // "seats unknown" -- which used to be the answer for nearly every card --
+  // resolves a few seconds later for the chains whose listings publish it.
+  //
+  // Best-effort throughout: a chain that rate-limits or hides behind an
+  // interstitial simply leaves those cards unknown, exactly as before.
+  const fillOccupancy = async (res, token) => {
+    const all = res?.showtimes || [];
+    if (!all.length) return;
+
+    // One request per date, earliest first.
+    //
+    // A listing load costs a couple of seconds and the whole set can take the
+    // better part of a minute, so asking for everything at once means the badges
+    // all sit at "unknown" until the last one lands. Per-date requests fill the
+    // top of the page — the dates the user is most likely to want — within a few
+    // seconds, and each date's cards update as its answer arrives.
+    const byDate = new Map();
+    for (const st of all) {
+      const day = st.start_datetime.slice(0, 10);
+      if (!byDate.has(day)) byDate.set(day, []);
+      byDate.get(day).push({
+        key: st.key, chain: st.chain, theater_id: st.theater_id,
+        movie_title: st.movie_title, start_datetime: st.start_datetime,
+      });
+    }
+
+    setOccupancyBusy(true);
+    try {
+      for (const day of [...byDate.keys()].sort()) {
+        if (searchToken.current !== token) return;  // a newer search superseded us
+        let occupancy;
+        try {
+          ({ occupancy } = await api.availability(byDate.get(day)));
+        } catch {
+          continue;  // one bad date shouldn't stop the rest
+        }
+        if (!occupancy || !Object.keys(occupancy).length) continue;
+        if (searchToken.current !== token) return;
+        setResult((prev) =>
+          prev && prev.showtimes
+            ? {
+                ...prev,
+                showtimes: prev.showtimes.map((st) =>
+                  occupancy[st.key]
+                    ? { ...st, seat_check: { ...st.seat_check, occupancy: occupancy[st.key] } }
+                    : st,
+                ),
+              }
+            : prev,
+        );
+      }
+    } finally {
+      if (searchToken.current === token) setOccupancyBusy(false);
+    }
+  };
+
   const doSearch = async () => {
     if (!form.movie_title.trim()) {
       setError("Enter a movie title to search.");
@@ -71,8 +134,10 @@ export default function App() {
     setActiveSavedId(null);
     try {
       const res = await api.search(form);
+      const token = ++searchToken.current;
       setResult(res);
       saveLastSearch(form, res);
+      fillOccupancy(res, token);
       requestAnimationFrame(() =>
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
       );
@@ -99,8 +164,10 @@ export default function App() {
     setActiveSavedId(id);
     try {
       const res = await api.runSaved(id);
+      const token = ++searchToken.current;
       setResult(res);
       saveLastSearch(form, res);
+      fillOccupancy(res, token);
       requestAnimationFrame(() =>
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
       );
@@ -167,6 +234,11 @@ export default function App() {
         )}
 
         <div ref={resultsRef} className="space-y-6">
+          {occupancyBusy && (
+            <p className="text-xs text-muted-foreground">
+              Checking how full each showing is, nearest dates first…
+            </p>
+          )}
           <Results result={result} config={config} />
         </div>
 
