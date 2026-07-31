@@ -55,6 +55,14 @@ class SeatCheck(BaseModel):
     best_block_size: Optional[int] = None
     best_block_row: Optional[RowInterpretation] = None
     reason: Optional[str] = None  # why "check_manually" (canvas, login wall...)
+    # How full the showing is, from the chain's own listing page — a much cheaper
+    # signal than a seat map (one load per theatre/date, not per showing).
+    #
+    # It is NOT the seat check and never sets `status`, except that "sold_out"
+    # settles it: no seats at all means no block of N. "almost_full" and
+    # "seats_available" say nothing about seats being *together*, so they leave
+    # the exact question to seat verification.
+    occupancy: Optional[Literal["sold_out", "almost_full", "seats_available"]] = None
 
 
 class ShowtimeLinks(BaseModel):
@@ -176,3 +184,31 @@ class VerifySeatsResponse(BaseModel):
     # The chain's page for this exact showtime, when it could be resolved. Handed
     # back even if parsing failed, since it saves the user finding it themselves.
     seat_url: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Listing occupancy (how full a showing is)
+# --------------------------------------------------------------------------- #
+class AvailabilityItem(BaseModel):
+    """One showing to look up, identified by the caller's own key.
+
+    The key is echoed back untouched so the UI can merge results without having
+    to reconstruct how a showtime was identified.
+    """
+
+    key: str
+    chain: str
+    theater_id: str
+    movie_title: str
+    start_datetime: datetime
+
+
+class AvailabilityRequest(BaseModel):
+    showtimes: list[AvailabilityItem] = Field(default_factory=list)
+
+
+class AvailabilityResponse(BaseModel):
+    # showtime key -> "sold_out" | "almost_full" | "seats_available".
+    # Absent keys mean "not known", which is a normal outcome, not an error.
+    occupancy: dict[str, str] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
