@@ -1,9 +1,16 @@
 // Small shadcn-style primitives, hand-rolled so the app is self-contained.
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...props }) {
+// forwardRef because callers scroll a card into view. On React 18 a plain
+// function component silently drops the ref (it only warns in the console), so
+// BrowserSeatCheck's panelRef stayed null and the scroll-to-the-result after a
+// bookmarklet handoff never happened -- exactly when it is needed, since the
+// handoff lands in a new tab.
+export const Card = forwardRef(function Card({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       className={cn(
         "rounded-lg border bg-card text-card-foreground shadow-sm backdrop-blur-sm",
         className
@@ -11,7 +18,7 @@ export function Card({ className, ...props }) {
       {...props}
     />
   );
-}
+});
 
 export function Button({ className, variant = "default", size = "default", ...props }) {
   const variants = {
