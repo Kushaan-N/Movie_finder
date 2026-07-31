@@ -23,7 +23,7 @@ from ..schemas import (
     ShowtimeLinks,
 )
 from .seatcheck import check_seats
-from .theaters import Theater, candidate_theaters, load_theaters
+from .theaters import Theater, candidate_theaters, geocode, load_theaters
 
 logger = logging.getLogger("showtime_finder.search")
 
@@ -174,6 +174,10 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
     # search, so the radius is what bounds provider quota.
     candidates = candidate_theaters(req.location, req.radius_miles, [])
     dist_by_theater_id = {t.id: d for t, d in candidates}
+    # An unplaceable location doesn't fail — it just stops bounding anything, so
+    # the radius quietly does nothing and every theater gets queried. Say so
+    # rather than showing a "25 mi" search that includes theaters 50 miles away.
+    location_placed = geocode(req.location) is not None
 
     query = ProviderQuery(
         movie_title=req.movie_title,
@@ -307,6 +311,13 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
                 links=links,
                 seat_check=seat_check,
             )
+        )
+
+    if not location_placed:
+        notes.append(
+            f"Could not place \"{req.location}\" on the map, so the "
+            f"{req.radius_miles:g}-mile radius was not applied and distances are "
+            "hidden. A ZIP code or a city name like \"San Jose\" works."
         )
 
     # The provider found the movie but every row was filtered out locally. Say
