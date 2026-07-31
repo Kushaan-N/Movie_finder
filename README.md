@@ -26,8 +26,12 @@ auth later is additive, not a rewrite.
 - **Graceful data-source fallback**: SerpApi → MovieGlu → Playwright scraper → demo.
 - **Saved searches** with one-tap re-run and a **diff view** highlighting showtimes
   that are new since the last run.
-- Seat-check status badges: 🟢 match / 🟡 seats unknown / 🔴 no block — and it
-  **never fabricates** a match when a seat map can't be parsed.
+- Seat-check status badges: 🟢 match / 🔴 no block — and it **never fabricates** a
+  match when a seat map can't be parsed.
+- **Showings say how full they are without opening a seat map.** The chains' own
+  listing pages publish sold-out / almost-full state for every showing at a
+  theatre on a date in a single page load, so "seats unknown" is now the
+  exception rather than the default. See "How full a showing is" below.
 - **Every showtime links somewhere real.** A provider's own link is a `google.com`
   search page, so each card instead opens the chain's own page for that theatre and
   date — where the ticket is actually sold — with a Fandango link alongside. See
@@ -231,6 +235,47 @@ Fandango is deliberately a *search* link: their deep links embed internal ids
 (`/the-odyssey-2026-241283/movie-overview`) that can't be derived, so linking
 "straight to" a showtime there would be a guess. The query is the movie **alone** —
 adding the theatre name makes their search return nothing at all.
+
+---
+
+## How full a showing is (and why "seats unknown" is now rare)
+
+Reading a **seat map** is expensive and mostly blocked: one page load per showing,
+Regal's is CAPTCHA-gated, Cinemark's is robots-disallowed. So nearly every card
+opened as 🟡 "seats unknown", which is honest but useless.
+
+The chains' **listing** pages — one load per theatre *and date*, which seat
+verification already fetched and cached — turn out to publish the state of every
+showing on them:
+
+| Chain | Listing exposes | How |
+|---|---|---|
+| **AMC** | sold out, almost full | in the showtime link's own text: `6:00pm Almost Full` |
+| **Regal** | sold out | `<button disabled aria-label="10:30pm showtime, sold out">` |
+| **Cinemark** | nothing | its listing is served behind a Cloudflare interstitial |
+
+So `/api/availability` answers for *every* showing at a theatre that day in a
+single fetch. Measured on a live 96-showtime search: **33 badges resolved from 7
+page loads**, versus 33 seat-map loads to learn the same thing.
+
+**This is not the seat check.** "Almost full" says seats remain, not that any are
+*together* — only a seat map answers `seats_together`, which is what **Check
+seats** still does. The badge wording and its tooltip both say so. The one case
+occupancy settles outright is **sold out**: no seats at all means no block of N,
+so that reads as a definitive red and the Check-seats button is withdrawn (there
+is nothing left to check).
+
+It is a **separate request from `/api/search`** deliberately — search stays as
+fast as it was, and the UI fills badges in behind it, **one request per date,
+earliest first**, so the top of the page resolves in seconds rather than every
+card waiting on the slowest.
+
+The verifier behind it is **process-wide**, which is a real fix rather than
+tidiness: a fresh one per request discarded the listing cache and relaunched the
+browser, so asking twice cost exactly as much as asking once — measured at 46s
+cold and 43s "warm". Sharing it makes the repeat hit the TTL cache and touch the
+network not at all: **46s → 0.3s**. That is the honest way to be fast here, as
+opposed to raising the deliberately-polite 0.5 req/sec rate limit.
 
 ---
 
