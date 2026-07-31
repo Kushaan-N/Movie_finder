@@ -205,8 +205,9 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
                 max={40}
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Physical position from the screen — e.g. 5 = row 5 or further back (not the label;
-                see row normalization).
+                Counted from the screen, not the printed row letter — 5 means the fifth
+                row back or further. A chain that skips letters (AMC has no row I) is
+                translated, so "row 5" is the same seat wherever you search.
               </p>
             </div>
           </div>
