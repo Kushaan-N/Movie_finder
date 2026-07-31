@@ -45,6 +45,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             <Film className="h-4 w-4 text-primary" /> Movie title
           </Label>
           <Input
+            aria-label="Movie title"
             list="movie-suggestions"
             placeholder="e.g. Dune: Part Two"
             value={value.movie_title}
@@ -102,7 +103,8 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
             </Label>
             <Input
               placeholder="Address or ZIP (e.g. 94103)"
-              value={value.location}
+              aria-label="Location — address or ZIP to search around"
+            value={value.location}
               onChange={(e) => set({ location: e.target.value })}
               required
             />
@@ -229,6 +231,7 @@ export default function SearchForm({ value, onChange, onSearch, onSave, formats,
         {showSave && (
           <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-background/40 p-3 sm:flex-row">
             <Input
+              aria-label="Name for this saved search"
               placeholder='Name it, e.g. "SF/SJ IMAX 4-together row 5+"'
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
