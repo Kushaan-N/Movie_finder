@@ -41,6 +41,18 @@ class RateLimiter:
 
 
 _robots_cache: dict[str, "robots.RobotsFile"] = {}
+# Roots whose robots.txt could not be READ (bot check, queue page, empty body),
+# mapped to when we gave up.
+#
+# Two reasons this is separate from the deny-all cache entry. It distinguishes
+# "the site forbids this" from "we could not read the file" — both end in "don't
+# fetch", but only the first is the site's decision, and reporting the wrong one
+# accuses the site of a policy it does not have. And it *expires*: AMC serves a
+# Queue-it waiting room in place of robots.txt under load, so being unreadable is
+# a bad minute, not a standing condition. Without the expiry one queued fetch
+# disables that chain for the life of the process.
+_robots_unreadable: dict[str, float] = {}
+_ROBOTS_RETRY_AFTER_SEC = 300.0
 _DENY_ALL = robots.parse("User-agent: *\nDisallow: /")
 
 # Theater chains reject urllib's default User-Agent outright (both amctheatres.com
@@ -79,12 +91,31 @@ def cache_robots(root: str, body: str) -> bool:
     except robots.NotRobotsTxt as exc:
         logger.info("robots.txt for %s is not parseable (%s); treating as deny.", root, exc)
         _robots_cache[root] = _DENY_ALL
+        _robots_unreadable[root] = time.time()
         return False
     if rf.empty:
         logger.info("robots.txt for %s had no directives; treating as deny.", root)
         _robots_cache[root] = _DENY_ALL
+        _robots_unreadable[root] = time.time()
         return False
     _robots_cache[root] = rf
+    _robots_unreadable.pop(root, None)
+    return True
+
+
+def robots_unreadable(root: str) -> bool:
+    """True when ``root`` is deny-all because we could not READ its robots.txt.
+
+    Expires after ``_ROBOTS_RETRY_AFTER_SEC``: on expiry the deny-all is dropped
+    too, so the next check re-fetches instead of inheriting a stale verdict.
+    """
+    stamp = _robots_unreadable.get(root)
+    if stamp is None:
+        return False
+    if time.time() - stamp >= _ROBOTS_RETRY_AFTER_SEC:
+        _robots_unreadable.pop(root, None)
+        _robots_cache.pop(root, None)
+        return False
     return True
 
 
