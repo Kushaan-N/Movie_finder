@@ -36,9 +36,10 @@ auth later is additive, not a rewrite.
   search page, so each card instead opens the chain's own page for that theatre and
   date — where the ticket is actually sold — with a Fandango link alongside. See
   "Where a showtime links to" below.
-- **Results are ordered by how far you'd travel**, nearest theatre first, then by name
-  and start time — so the closest option is the thing you read first, not whatever
-  order the provider happened to return.
+- **Results lead with theatres whose seats we can actually check**, then nearest
+  within that — because a nearer theatre that can only ever say "check manually"
+  is not more useful than one that can answer the question. The ordering is
+  stated on the page rather than left to be guessed at. See "Ordering" below.
 - **Each action appears once, at the level it applies to.** Directions belong to a
   theatre, "Open at AMC"/Fandango belong to a theatre *and date*, so they sit on
   those headers instead of repeating on every card. A showtime card carries only
@@ -181,6 +182,42 @@ implemented in
 
 Each falls back to the next when unavailable or empty. The scraper is rate-limited and
 respects `robots.txt`.
+
+---
+
+## Ordering: what we can answer, then how far
+
+The seat requirement is the whole point of this app, and only some chains can
+answer it — so results lead with the theatres where the question can be settled,
+and sort by distance *within* that tier:
+
+| Rank | Seat data | Chain | Shown as |
+|---|---|---|---|
+| 1 | a real seat map | AMC | 🟢 `Seat maps` |
+| 2 | sold-out state only | Regal | 🟡 `Sold-out status only` |
+| 3 | nothing without your own browser | Cinemark | `Seats via your browser` |
+
+Sorting purely by distance put a Cinemark at the top and buried AMC, so the first
+thing on screen was a column of cards that could only ever say "check manually".
+Distance still decides the order inside a tier and stays on every theatre, and
+the header says outright that a closer theatre may appear below a further one —
+an unexplained ordering reads as a bug.
+
+The rank is derived from each chain's own config, not a hardcoded `"amc"`, so if
+a chain's strategy ever changes the ordering and the label move together. The
+same value drives both, so they cannot disagree about why a theatre sits where it
+does.
+
+**Checking many showings.** Each seat map is one page load of someone else's
+site, so a date row can check its showings *one at a time*, capped at 8, with
+progress and a Stop — sequential because the rate limiter serialises it anyway,
+and because results landing one by one is what makes progress visible. Sold-out
+showings are skipped: the answer is already no.
+
+**When the red badge needs explaining.** "No 4 together" over a map with visible
+free seats looks wrong until you know `min_row` caused it, so the card says which
+constraint failed — *"6 together exist, but only up to row 2 — you asked for row
+5+"* — and therefore which one to relax.
 
 ---
 
