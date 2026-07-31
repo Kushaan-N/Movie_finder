@@ -160,15 +160,15 @@ export default function BrowserSeatCheck({ form, showtimes = [], onApply }) {
         aria-expanded={open}
       >
         <ScanSearch className="h-4 w-4 text-primary" />
-        <h2 className="text-sm font-semibold">Check seats from your browser</h2>
+        <h2 className="text-sm font-semibold">Read a seat map from your own browser</h2>
         <Badge tone="blue">works for every chain</Badge>
         <span className="ml-auto text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
       </button>
 
       {!open && !seat && (
         <p className="mt-1 text-xs text-muted-foreground">
-          Read a seat map from a page you opened yourself — the only way that reaches
-          Regal and Cinemark.
+          Reads the seat map off a page you opened yourself — the only route that
+          reaches Regal and Cinemark.
         </p>
       )}
 
