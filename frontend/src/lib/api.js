@@ -26,6 +26,11 @@ export const api = {
   // that reaches every chain (Regal is CAPTCHA-gated, Cinemark robots-disallowed).
   verifySeatsFromGrid: (payload) =>
     req("/api/verify-seats/from-grid", { method: "POST", body: JSON.stringify(payload) }),
+  // How full each showing is, from the chains' own listing pages. Deliberately a
+  // second call: it costs a page load per theatre and date, so search stays fast
+  // and the badges fill in behind it.
+  availability: (showtimes) =>
+    req("/api/availability", { method: "POST", body: JSON.stringify({ showtimes }) }),
   bookmarklet: (appUrl) =>
     req(`/api/seat-bookmarklet?app_url=${encodeURIComponent(appUrl)}`),
   listSaved: () => req("/api/saved-searches"),
