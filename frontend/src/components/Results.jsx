@@ -397,9 +397,18 @@ export default function Results({ result, config, form }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <Badge tone={meta.provider_used === "demo" ? "yellow" : "blue"}>
-          source: {meta.provider_used}
-        </Badge>
+        {/* Demo data is synthetic. "source: demo" states that only to someone who
+            already knows what it means, so the risk of mistaking invented
+            showtimes for real ones is spelled out instead. */}
+        {meta.provider_used === "demo" ? (
+          <Badge tone="yellow" title="No provider key is configured, so these showtimes are invented for demonstration.">
+            Demo data — not real showtimes
+          </Badge>
+        ) : (
+          <Badge tone="blue" title={`Live showtimes via ${meta.provider_used}.`}>
+            Live data
+          </Badge>
+        )}
         <span>
           {meta.showtimes_returned} showtimes · {grouped.size} theaters
         </span>
