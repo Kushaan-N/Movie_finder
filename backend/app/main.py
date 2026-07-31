@@ -92,7 +92,18 @@ def health() -> dict:
 @app.get("/api/config")
 def config() -> dict:
     """Surface editable options to the UI (formats, chains, theaters)."""
-    from .scrape.verifier import verifiable_chains
+    from .scrape.verifier import (
+        SEAT_DATA_FULL,
+        SEAT_DATA_PARTIAL,
+        seat_data_rank,
+        verifiable_chains,
+    )
+
+    def _seat_data(chain: str) -> str:
+        rank = seat_data_rank(chain)
+        if rank == SEAT_DATA_FULL:
+            return "full"
+        return "partial" if rank == SEAT_DATA_PARTIAL else "none"
 
     theaters = theaters_service.load_theaters()
     preferred_formats = ["IMAX", "Dolby", "70mm IMAX", "70mm", "4DX", "ScreenX", "XD", "Standard"]
@@ -107,6 +118,13 @@ def config() -> dict:
         "provider_available": settings.has_serpapi or settings.has_movieglu or settings.enable_scraper_fallback,
         "seat_verification": settings.enable_seat_verification and _playwright_installed(),
         "verify_chains": sorted(verifiable_chains()),
+        # What each chain can tell us about seats: "full" (a real seat map),
+        # "partial" (sold-out state only), "none" (needs the user's own browser).
+        # Drives both the result ordering and the label the UI shows, so the two
+        # can never disagree about why a theatre is where it is.
+        "seat_data": {
+            t.chain: _seat_data(t.chain) for t in theaters if t.chain
+        },
     }
 
 
