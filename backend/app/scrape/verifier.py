@@ -47,6 +47,7 @@ resolution and parsing can be unit-tested by monkeypatching it.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -64,9 +65,14 @@ from ..providers.scraper_provider import (
 from ..schemas import SeatCheck, Showtime
 from ..services.seatcheck import evaluate_rows
 from ..services.theaters import load_theaters
-from . import resolver
+from . import availability, resolver
 from .extract import call_expression, rows_from_payload
 from .seatmap import SeatMapParseResult, _chain_cfg, parse_seat_html
+
+# Bounded fan-out for listing loads. These are other people's servers and the
+# rate limiter applies underneath; a handful at a time is plenty, since one load
+# answers for every showing at that theatre on that date.
+_OCCUPANCY_CONCURRENCY = 4
 
 logger = logging.getLogger("showtime_finder.verifier")
 
@@ -445,6 +451,65 @@ class SeatVerifier:
             reason=result.reason,
         )
 
+    # --- occupancy from the listing page ----------------------------------- #
+    async def occupancy(
+        self, chain: str, theater_id: str, day: datetime, movie_title: str
+    ) -> tuple[dict[str, str], Optional[str]]:
+        """How full each of this film's showings is at one theatre on one date.
+
+        Returns ({"HH:MM": state}, reason_if_empty). One listing load answers for
+        every showing that day, and ``_get_listing`` already caches it, so this is
+        effectively free alongside seat verification of the same theatre.
+        """
+        if not availability.supports(chain):
+            return {}, f"No listing occupancy parser for chain '{chain}'"
+        cfg = _chain_cfg(chain) or {}
+        html, _listing, reason = await self._get_listing(chain, theater_id, day, cfg)
+        if html is None:
+            return {}, reason or "Could not load the chain showtimes listing"
+        found = availability.parse(chain, html, movie_title)
+        if not found:
+            # The page loaded but held nothing for this film — worth distinguishing
+            # from a failed load, since it usually means the film is not on that day.
+            return {}, f"No showings for '{movie_title}' on the {chain} listing for that date"
+        return dict(found), None
+
+    async def occupancy_for(
+        self, groups: list[tuple[str, str, datetime, str]], *, close_browser: bool = True
+    ) -> tuple[dict[tuple[str, str, str, str], str], list[str]]:
+        """Occupancy for many (chain, theater_id, day, movie) groups at once.
+
+        Keyed by (chain, theater_id, YYYY-MM-DD, HH:MM). Groups run concurrently
+        but bounded — these are other people's servers, and the rate limiter
+        applies underneath.
+        """
+        out: dict[tuple[str, str, str, str], str] = {}
+        notes: list[str] = []
+        sem = asyncio.Semaphore(_OCCUPANCY_CONCURRENCY)
+
+        async def one(chain: str, theater_id: str, day: datetime, movie: str):
+            async with sem:
+                try:
+                    found, reason = await self.occupancy(chain, theater_id, day, movie)
+                except Exception as exc:  # a listing failure must not fail the search
+                    logger.info("Occupancy lookup failed for %s/%s: %s", chain, theater_id, exc)
+                    return None
+                if reason and not found:
+                    return reason
+                for hhmm, state in found.items():
+                    out[(chain, theater_id, day.strftime("%Y-%m-%d"), hhmm)] = state
+                return None
+
+        try:
+            results = await asyncio.gather(*(one(*g) for g in groups))
+        finally:
+            if close_browser:
+                await self._close()
+        for reason in results:
+            if reason and reason not in notes:
+                notes.append(reason)
+        return out, notes
+
     async def verify_showtime(
         self, chain: str, theater_id: str, start: datetime, seats_together: int,
         min_row: int, movie_title: str = "",
@@ -514,3 +579,33 @@ class SeatVerifier:
                 "cannot seat your group."
             )
         return verified, notes
+
+
+# A process-wide verifier for occupancy lookups.
+#
+# Occupancy is dominated by *fetching*, not parsing: the rate limiter allows one
+# request every couple of seconds, deliberately. A fresh verifier per request
+# threw away the listing cache and relaunched the browser, so asking twice cost
+# exactly as much as asking once (measured: 46s cold, 43s "warm"). Sharing the
+# instance makes a repeat lookup hit the TTL cache and do no network at all --
+# faster for the user and less traffic for the chains, which is the honest way to
+# be quick here rather than raising the rate limit.
+#
+# Safe to share: every page load already gets its own browser context, and the
+# browser is only torn down at shutdown rather than after each request.
+_shared: Optional["SeatVerifier"] = None
+
+
+def shared_verifier() -> "SeatVerifier":
+    global _shared
+    if _shared is None:
+        _shared = SeatVerifier()
+    return _shared
+
+
+async def close_shared_verifier() -> None:
+    """Release the shared browser (called on app shutdown)."""
+    global _shared
+    if _shared is not None:
+        await _shared._close()
+        _shared = None
