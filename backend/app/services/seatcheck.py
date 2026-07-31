@@ -35,6 +35,13 @@ def evaluate_rows(
     provider check and the Playwright seat-verification enrichment."""
     best_block_size = 0
     best_row_interp: Optional[RowInterpretation] = None
+    # The best block ANYWHERE, ignoring min_row. Without this the row filter is a
+    # dead end: a map with four seats together in row 3 and nothing behind row 5
+    # reports a bare "no block", which reads as "this showing is full" when the
+    # truth is "your row requirement excluded it". Keeping it lets the UI say which
+    # of the two constraints actually failed, and therefore which one to relax.
+    best_any_size = 0
+    best_any_interp: Optional[RowInterpretation] = None
 
     for idx, row in enumerate(seat_rows):
         interp = normalize_row(
@@ -43,9 +50,16 @@ def evaluate_rows(
             dom_order_index=idx,
             theater_id=theater_id,
         )
+        run = _longest_available_run(row.seats_available)
+        if run > best_any_size:
+            best_any_size = run
+            best_any_interp = RowInterpretation(
+                raw_label=interp.raw_label,
+                physical_row=interp.physical_row,
+                display=interp.display,
+            )
         if interp.physical_row < min_row:
             continue
-        run = _longest_available_run(row.seats_available)
         if run > best_block_size:
             best_block_size = run
             best_row_interp = RowInterpretation(
@@ -67,6 +81,8 @@ def evaluate_rows(
         min_row_requested=min_row,
         best_block_size=best_block_size or None,
         best_block_row=best_row_interp,
+        best_block_any_row_size=best_any_size or None,
+        best_block_any_row=best_any_interp,
         reason=None if status == "match" else "No qualifying contiguous block found",
     )
 
