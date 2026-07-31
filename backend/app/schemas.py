@@ -108,6 +108,13 @@ class SearchMeta(BaseModel):
     theaters_considered: int
     showtimes_returned: int
     notes: list[str] = Field(default_factory=list)
+    # How many real showings the local filters removed, by cause.
+    #
+    # Reported on every search, not only when nothing survives. A weekday cutoff
+    # of 18:30 silently hides every matinee, and "why is there no 2pm Friday
+    # showing?" is unanswerable from a page that never mentions it. Kept separate
+    # from `notes` so the UI can show it quietly rather than as a warning.
+    hidden_by_filters: dict[str, int] = Field(default_factory=dict)
 
 
 class SearchResponse(BaseModel):
