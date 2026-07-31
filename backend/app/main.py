@@ -169,7 +169,7 @@ def seat_bookmarklet(app_url: str = "http://localhost:5173") -> dict:
         "fragment_key": FRAGMENT_KEY,
         "bytes": len(href),
         "how_to": [
-            "Drag the 'Check seats' link onto your bookmarks bar (or bookmark this href).",
+            "Drag the 'Read seats' link onto your bookmarks bar (or bookmark this href).",
             "In the app, click a showtime's booking link to open the chain's site.",
             "Go to that showtime's seat-selection step and wait for the seats to draw.",
             "Click the bookmarklet. The grid is read from the page you are looking at "
@@ -209,11 +209,11 @@ def seat_bookmarklet_setup(app_url: str = "http://localhost:5173") -> str:
 </style></head><body>
 <h1>Seat-check bookmarklet</h1>
 <p>Drag this onto your bookmarks bar:</p>
-<p><a class="bm" href="{escape(href, quote=True)}">Check seats</a></p>
+<p><a class="bm" href="{escape(href, quote=True)}">Read seats</a></p>
 <ol>
  <li>In showtime-finder, open a showtime's booking link.</li>
  <li>Navigate to that showtime's <b>seat selection</b> step and let the seats draw.</li>
- <li>Click <b>Check seats</b>. The grid is read from the page in front of you and
+ <li>Click <b>Read seats</b>. The grid is read from the page in front of you and
      handed back to the app at <code>{escape(app_url)}</code>.</li>
 </ol>
 <p class="muted">This reads only the page you already have open. It works for every
