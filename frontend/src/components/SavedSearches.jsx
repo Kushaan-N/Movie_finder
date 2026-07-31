@@ -30,7 +30,8 @@ export default function SavedSearches({ items, onRun, onDelete, onLoad, activeId
             <button
               onClick={() => onLoad(s)}
               className="min-w-0 flex-1 text-left"
-              title="Load into form"
+              title="Load into the form (does not search)"
+              aria-label={`Load saved search "${s.name}" into the form`}
             >
               <div className="truncate text-sm font-medium">{s.name}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -42,10 +43,31 @@ export default function SavedSearches({ items, onRun, onDelete, onLoad, activeId
               </div>
             </button>
             <div className="flex shrink-0 items-center gap-1">
-              <Button size="icon" variant="ghost" onClick={() => onRun(s.id)} title="Run (with diff)">
+              {/* aria-label, not just title: an icon-only button has no text for a
+                  screen reader to announce, and `title` is not a reliable
+                  substitute. */}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => onRun(s.id)}
+                title={`Re-run "${s.name}" and highlight what's new`}
+                aria-label={`Re-run saved search "${s.name}"`}
+              >
                 <Play className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => onDelete(s.id)} title="Delete">
+              {/* Confirm first: this is destructive, irreversible, and sits one
+                  icon away from Run. */}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => {
+                  if (window.confirm(`Delete the saved search "${s.name}"? This can't be undone.`)) {
+                    onDelete(s.id);
+                  }
+                }}
+                title={`Delete "${s.name}"`}
+                aria-label={`Delete saved search "${s.name}"`}
+              >
                 <Trash2 className="h-4 w-4 text-red-400" />
               </Button>
             </div>
