@@ -252,11 +252,13 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
     # Track why rows were dropped so an empty result can explain itself instead of
     # just saying "no showtimes matched".
     dropped_format: set[str] = set()
+    dropped_format_count = 0
     dropped_time = 0
     dropped_radius = 0
     for st in raw:
         if not _format_matches_any(st.format, requested_formats):
             dropped_format.add(st.format)
+            dropped_format_count += 1
             continue
         # Time-of-day / day-of-week rule.
         if not _passes_time_rule(st.start_datetime, cutoff, req.time_rule.weekends_unrestricted):
@@ -325,6 +327,16 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
 
     # The provider found the movie but every row was filtered out locally. Say
     # which filter did it — otherwise this is indistinguishable from "not playing".
+    hidden = {
+        k: v
+        for k, v in (
+            ("time", dropped_time),
+            ("format", dropped_format_count),
+            ("radius", dropped_radius),
+        )
+        if v
+    }
+
     if raw and not showtimes:
         if dropped_format:
             offered = ", ".join(sorted(dropped_format))
@@ -391,6 +403,7 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
         theaters_considered=len(candidates) or len(theaters),
         showtimes_returned=len(showtimes),
         notes=notes,
+        hidden_by_filters=hidden,
     )
     response = SearchResponse(meta=meta, showtimes=showtimes)
 
