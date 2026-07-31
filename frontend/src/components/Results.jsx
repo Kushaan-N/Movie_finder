@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   MapPin,
   Ticket,
@@ -108,8 +108,11 @@ function SeatBadge({ seat }) {
   }
   if (s === "no_match") {
     return (
-      <Badge tone="red">
-        <XCircle className="h-3.5 w-3.5" /> No {seat.seats_together_requested}-block
+      <Badge
+        tone="red"
+        title={`No run of ${seat.seats_together_requested} free seats at or behind physical row ${seat.min_row_requested}.`}
+      >
+        <XCircle className="h-3.5 w-3.5" /> No {seat.seats_together_requested} together
       </Badge>
     );
   }
@@ -169,10 +172,12 @@ function SeatGrid({ grid, minRow }) {
   );
 }
 
-function ShowtimeCard({ st, canVerify, groupReason }) {
-  const [verified, setVerified] = useState(null); // { seat_check, grid, reason, available }
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
+function ShowtimeCard({ st, canVerify, groupReason, verify }) {
+  // Verification state lives in TheaterBody, keyed by showtime, so that one
+  // "check these for me" action can drive many cards. Kept per-showtime rather
+  // than per-card because a card unmounts when the list re-renders (an occupancy
+  // fill does exactly that) and a locally-held result would vanish with it.
+  const { verified, busy, err, run: runVerify } = verify(st);
 
   const seat = verified?.seat_check || st.seat_check;
   const links = st.links || {};
@@ -187,26 +192,6 @@ function ShowtimeCard({ st, canVerify, groupReason }) {
     !verified &&
     st.seat_check.status === "check_manually" &&
     st.seat_check.occupancy !== "sold_out";
-
-  const runVerify = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await api.verifySeats({
-        chain: st.chain,
-        theater_id: st.theater_id,
-        start_datetime: st.start_datetime,
-        movie_title: st.movie_title,
-        seats_together: st.seat_check.seats_together_requested,
-        min_row: st.seat_check.min_row_requested,
-      });
-      setVerified(res);
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div
@@ -229,6 +214,19 @@ function ShowtimeCard({ st, canVerify, groupReason }) {
             {seat.best_block_row.display}
           </span>
         )}
+        {/* A red badge over a map with visible free seats looks wrong until you
+            know the row filter caused it. Say which constraint failed, so the
+            user knows whether to pick another showing or relax the row. */}
+        {seat.status === "no_match" &&
+          !seat.best_block_size &&
+          seat.best_block_any_row_size >= seat.seats_together_requested &&
+          seat.best_block_any_row?.physical_row != null && (
+            <span className="text-xs text-amber-300/90">
+              {seat.best_block_any_row_size} together exist, but only up to row{" "}
+              {seat.best_block_any_row.physical_row} — you asked for row{" "}
+              {seat.min_row_requested}+.
+            </span>
+          )}
       </div>
 
       {verified?.grid?.length ? (
@@ -270,9 +268,18 @@ function ShowtimeCard({ st, canVerify, groupReason }) {
           being repeated on all 103 cards. */}
       <div className="mt-1 flex flex-wrap items-center gap-3">
         {showVerifyBtn && (
-          <Button size="sm" variant="outline" onClick={runVerify} disabled={busy}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runVerify}
+            disabled={busy}
+            // Say how long before they commit, and keep saying it while it runs:
+            // this opens the chain's real seat page and reads the map, which is
+            // tens of seconds. Silence here reads as a broken button.
+            title="Opens this showtime's seat page and reads the map — usually 30–60 seconds."
+          >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}
-            {busy ? "Checking…" : "Check seats"}
+            {busy ? "Reading seat map… ~40s" : "Check seats"}
           </Button>
         )}
         <button
@@ -304,6 +311,33 @@ function sharedReason(showtimes) {
 }
 
 
+// What this app can tell you about seats at a given chain — the same ranking the
+// server sorts by, so the label always explains the position rather than
+// contradicting it.
+const SEAT_DATA = {
+  full: {
+    tone: "green",
+    label: "Seat maps",
+    title:
+      "This chain publishes a seat map we can read, so Check seats gives a real "
+      + "answer about seats together and row.",
+  },
+  partial: {
+    tone: "yellow",
+    label: "Sold-out status only",
+    title:
+      "This chain's seat page is behind a CAPTCHA. Its listing still shows which "
+      + "showings are sold out, which rules those out, but exact seats need your browser.",
+  },
+  none: {
+    tone: "default",
+    label: "Seats via your browser",
+    title:
+      "This chain does not allow automated access to its seat map. Open a showtime "
+      + "yourself and use the bookmarklet to read it.",
+  },
+};
+
 function groupByTheaterThenDate(showtimes) {
   const byTheater = new Map();
   for (const st of showtimes) {
@@ -323,7 +357,7 @@ function prettyDate(iso) {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-export default function Results({ result, config }) {
+export default function Results({ result, config, form }) {
   if (!result) return null;
   const { meta, showtimes } = result;
 
@@ -360,6 +394,14 @@ export default function Results({ result, config }) {
         </span>
       </div>
 
+      {grouped.size > 1 && (
+        <p className="-mt-4 text-xs text-muted-foreground">
+          Theatres whose seats we can actually check come first, then nearest — so a
+          closer theatre may appear below one further away. Distance is shown on every
+          theatre.
+        </p>
+      )}
+
       {meta.notes?.length ? (
         <Card className="border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-200/90">
           {meta.notes.map((n, i) => (
@@ -393,13 +435,27 @@ export default function Results({ result, config }) {
                   <Navigation className="h-3.5 w-3.5" /> Directions
                 </a>
               )}
-              <Badge tone="default" className="uppercase">
-                {theater.chain}
-              </Badge>
+              {(() => {
+                const cap = SEAT_DATA[config?.seat_data?.[theater.chain]];
+                return cap ? (
+                  <Badge tone={cap.tone} title={cap.title}>
+                    {cap.label}
+                  </Badge>
+                ) : (
+                  <Badge tone="default" className="uppercase">
+                    {theater.chain}
+                  </Badge>
+                );
+              })()}
             </div>
           </div>
 
-          <TheaterBody dates={dates} verifyFor={verifyFor} />
+          <TheaterBody
+            dates={dates}
+            verifyFor={verifyFor}
+            seatData={config?.seat_data?.[theater.chain]}
+            form={form}
+          />
         </Card>
       ))}
     </div>
@@ -409,16 +465,112 @@ export default function Results({ result, config }) {
 // Split out so the theatre-wide reason is computed ONCE and used both for the hoisted
 // line and for deciding which cards still need to say something of their own. Two
 // separate computations drift, and a card can then repeat a line already above it.
-function TheaterBody({ dates, verifyFor }) {
+// One verification store per theatre: { [key]: {verified, busy, err} }.
+//
+// Sequential, not parallel, and capped. Each check opens the chain's real seat
+// page, so this is someone else's server: the backend rate-limits to one request
+// every two seconds anyway, and firing ten at once would only queue them while
+// looking like a stampede. Sequential also means results land one at a time,
+// which is what makes progress visible.
+const BULK_VERIFY_CAP = 8;
+
+function useVerification(seatsTogether, minRow) {
+  const [state, setState] = useState({});
+  const cancelled = useRef(false);
+
+  const patch = (key, next) =>
+    setState((prev) => ({ ...prev, [key]: { ...prev[key], ...next } }));
+
+  const verifyOne = async (st) => {
+    patch(st.key, { busy: true, err: null });
+    try {
+      const res = await api.verifySeats({
+        chain: st.chain,
+        theater_id: st.theater_id,
+        start_datetime: st.start_datetime,
+        movie_title: st.movie_title,
+        seats_together: st.seat_check.seats_together_requested ?? seatsTogether,
+        min_row: st.seat_check.min_row_requested ?? minRow,
+      });
+      patch(st.key, { verified: res, busy: false });
+      return res;
+    } catch (e) {
+      patch(st.key, { err: e.message, busy: false });
+      return null;
+    }
+  };
+
+  const verify = (st) => ({
+    verified: state[st.key]?.verified || null,
+    busy: !!state[st.key]?.busy,
+    err: state[st.key]?.err || null,
+    run: () => verifyOne(st),
+  });
+
+  return { state, verify, verifyOne, cancelled };
+}
+
+function TheaterBody({ dates, verifyFor, seatData, form }) {
   const all = [...dates.values()].flat();
-  const theaterReason = sharedReason(all);
   const chainLabel = all[0]?.links?.chain_label || "the theater";
+  // Still computed, but no longer rendered at theatre level: the cards use it to
+  // suppress a per-card reason that every sibling shares. Dropping it entirely
+  // would let the provider-internal reason reappear one card at a time.
+  const theaterReason = sharedReason(all);
+  const { state, verify, verifyOne, cancelled } = useVerification(
+    form?.seats_together,
+    form?.min_row,
+  );
+  const [bulk, setBulk] = useState(null); // {done, total} while a run is going
+
+  // Which showings a bulk run would actually open: unverified, not already known
+  // sold out, on a chain we can read. Sold-out showings are skipped because the
+  // answer is already no -- spending 40 seconds to confirm it is the opposite of
+  // helpful.
+  const pending = (times) =>
+    times.filter(
+      (st) =>
+        verifyFor(st.chain) &&
+        !state[st.key]?.verified &&
+        st.seat_check.status === "check_manually" &&
+        st.seat_check.occupancy !== "sold_out",
+    );
+
+  const runBulk = async (times) => {
+    const queue = pending(times).slice(0, BULK_VERIFY_CAP);
+    if (!queue.length) return;
+    cancelled.current = false;
+    setBulk({ done: 0, total: queue.length });
+    for (let i = 0; i < queue.length; i++) {
+      if (cancelled.current) break;
+      await verifyOne(queue[i]);
+      setBulk({ done: i + 1, total: queue.length });
+    }
+    setBulk(null);
+  };
+
+  // What to say once for the whole theatre, driven by what the chain can give.
+  //
+  // This deliberately does NOT surface `seat_check.reason` for a chain we can
+  // read. That reason is the provider's ("SerpApi does not expose seat maps") --
+  // true, internal, and flatly contradicted by the "Seat maps" badge directly
+  // above it. The user needs to know what to do next, not which API we called.
+  let guidance = null;
+  if (seatData === "full") {
+    guidance = `Seat status isn't loaded up front. Check seats reads ${chainLabel}'s real seat map for one showing — it takes around 40 seconds.`;
+  } else if (seatData === "partial") {
+    guidance = `${chainLabel} puts its seat map behind a CAPTCHA, so we can only tell you which showings are sold out. For exact seats, open one yourself and use the panel below.`;
+  } else if (seatData === "none") {
+    guidance = `${chainLabel} doesn't permit automated access to its seat map, so seats here can only be read from a page you open yourself — see the panel below.`;
+  } else {
+    guidance = theaterReason ? endSentence(theaterReason) : null;
+  }
 
   return (
     <>
-      {theaterReason && (
+      {guidance && (
         <p className="border-b border-border/50 px-5 py-2 text-xs text-muted-foreground">
-          {endSentence(theaterReason)} Open a showtime at {chainLabel} to see its seat map.
+          {guidance}
         </p>
       )}
 
@@ -429,8 +581,41 @@ function TheaterBody({ dates, verifyFor }) {
               return (
                 <div key={day} className="px-5 py-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {prettyDate(day)}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {prettyDate(day)}
+                      </div>
+                      {(() => {
+                        const queue = pending(times);
+                        if (!queue.length && !bulk) return null;
+                        if (bulk) {
+                          return (
+                            <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Checking {bulk.done + 1} of {bulk.total}…
+                              <button
+                                type="button"
+                                onClick={() => (cancelled.current = true)}
+                                className="underline hover:text-foreground"
+                              >
+                                Stop
+                              </button>
+                            </span>
+                          );
+                        }
+                        const n = Math.min(queue.length, BULK_VERIFY_CAP);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => runBulk(times)}
+                            className="inline-flex items-center gap-1 text-xs text-primary underline hover:text-primary/80"
+                            title={`Reads the seat map for ${n} showing${n > 1 ? "s" : ""}, one at a time. Roughly ${Math.ceil((n * 40) / 60)} minute${n * 40 >= 120 ? "s" : ""} — you can leave it running.`}
+                          >
+                            <ScanSearch className="h-3.5 w-3.5" />
+                            Check {n} showing{n > 1 ? "s" : ""} (~{Math.ceil((n * 40) / 60)} min)
+                          </button>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-3">
                       <a
@@ -464,6 +649,7 @@ function TheaterBody({ dates, verifyFor }) {
                         st={st}
                         canVerify={verifyFor(st.chain)}
                         groupReason={theaterReason}
+                        verify={verify}
                       />
                     ))}
                   </div>
