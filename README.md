@@ -27,7 +27,10 @@ auth later is additive, not a rewrite.
 - **Saved searches** with one-tap re-run and a **diff view** highlighting showtimes
   that are new since the last run.
 - Seat-check status badges: 🟢 match / 🔴 no block — and it **never fabricates** a
-  match when a seat map can't be parsed.
+  match when a seat map can't be parsed. There is deliberately no "unknown" badge:
+  a badge earns its place by distinguishing one showing from its neighbours, and
+  that one appeared on every card at a chain we can't read while saying exactly
+  what the button beside it already said.
 - **Showings say how full they are without opening a seat map.** The chains' own
   listing pages publish sold-out / almost-full state for every showing at a
   theatre on a date in a single page load, so "seats unknown" is now the
