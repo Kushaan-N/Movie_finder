@@ -152,7 +152,9 @@ def test_setup_page_serves_a_draggable_link():
     r = client.get("/api/seat-bookmarklet/setup", params={"app_url": "http://x.test"})
     assert r.status_code == 200
     assert "javascript:" in r.text
-    assert "Check seats" in r.text
+    # Named "Read seats" so it can't be confused with the per-showtime "Check seats"
+    # action in the results list.
+    assert "Read seats" in r.text
 
 
 def test_handoff_payload_round_trips():
