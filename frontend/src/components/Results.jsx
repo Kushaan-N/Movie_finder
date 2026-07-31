@@ -3,7 +3,6 @@ import {
   MapPin,
   Ticket,
   CheckCircle2,
-  HelpCircle,
   XCircle,
   ArmchairIcon,
   ScanSearch,
@@ -97,6 +96,16 @@ const OCCUPANCY = {
   },
 };
 
+// True when the seat row would render anything at all. Must stay in step with
+// SeatBadge: if that returns null and nothing else applies, the row is empty.
+function hasSeatInfo(seat) {
+  return (
+    seat.status === "match" ||
+    seat.status === "no_match" ||
+    !!OCCUPANCY[seat.occupancy]
+  );
+}
+
 function SeatBadge({ seat }) {
   const s = seat.status;
   if (s === "match") {
@@ -127,11 +136,15 @@ function SeatBadge({ seat }) {
       </Badge>
     );
   }
-  return (
-    <Badge tone="yellow" title={seat.reason || undefined}>
-      <HelpCircle className="h-3.5 w-3.5" /> Seats unknown
-    </Badge>
-  );
+  // Nothing known, so show nothing.
+  //
+  // A badge earns its place by distinguishing this showing from its neighbours.
+  // "Seats unknown" never did: on a Cinemark theatre it appeared on every card,
+  // and on a checkable one it said exactly what the Check seats button beside it
+  // already said. It marked the absence of information as though that were
+  // information. Where a check is possible the button carries it; where it isn't,
+  // the theatre's own line explains why, once.
+  return null;
 }
 
 // Compact seat grid preview (rows top-to-bottom = screen to back).
@@ -206,6 +219,10 @@ function ShowtimeCard({ st, canVerify, groupReason, verify }) {
         {st.is_new && <Badge tone="new">NEW</Badge>}
       </div>
 
+      {/* Only render the row when it has something in it: an empty flex child
+          still consumes the card's gap, leaving a blank band where the badge
+          used to be. */}
+      {hasSeatInfo(seat) && (
       <div className="flex flex-wrap items-center gap-2">
         <SeatBadge seat={seat} />
         {seat.best_block_row?.display && (
@@ -228,6 +245,7 @@ function ShowtimeCard({ st, canVerify, groupReason, verify }) {
             </span>
           )}
       </div>
+      )}
 
       {verified?.grid?.length ? (
         <SeatGrid grid={verified.grid} minRow={st.seat_check.min_row_requested} />
