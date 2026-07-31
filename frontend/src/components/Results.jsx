@@ -352,6 +352,17 @@ function groupByTheaterThenDate(showtimes) {
   return byTheater;
 }
 
+// The cutoff is stored 24-hour ("18:30") because that's what <input type="time">
+// uses, but the form renders it in the viewer's locale ("6:30 PM"). Showing the
+// raw value elsewhere makes one setting look like two.
+function prettyTime(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || "");
+  if (!m) return hhmm || "weekday";
+  const d = new Date();
+  d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 function prettyDate(iso) {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -393,6 +404,22 @@ export default function Results({ result, config, form }) {
           {meta.showtimes_returned} showtimes · {grouped.size} theaters
         </span>
       </div>
+
+      {(() => {
+        // Quiet, not a warning: these showings exist and the user's own filters
+        // removed them. Saying so turns "why is there no 2pm Friday showing?"
+        // into an answerable question.
+        const h = meta.hidden_by_filters || {};
+        const parts = [];
+        if (h.time) parts.push(`${h.time} before your ${prettyTime(form?.time_rule?.weekday_cutoff)} weekday cutoff`);
+        if (h.format) parts.push(`${h.format} in other formats`);
+        if (h.radius) parts.push(`${h.radius} beyond ${form?.radius_miles ?? "your"} mi`);
+        return parts.length ? (
+          <p className="-mt-4 text-xs text-muted-foreground">
+            Also found, then hidden by your filters: {parts.join("; ")}.
+          </p>
+        ) : null;
+      })()}
 
       {grouped.size > 1 && (
         <p className="-mt-4 text-xs text-muted-foreground">
