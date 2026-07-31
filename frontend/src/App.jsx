@@ -14,6 +14,9 @@ export default function App() {
   const [config, setConfig] = useState(null);
   const [result, setResult] = useState(null);
   const [occupancyBusy, setOccupancyBusy] = useState(false);
+  // Why occupancy came back empty, when it did. Surfaced rather than dropped:
+  // a page full of "Seats unknown" with no explanation reads as broken.
+  const [occupancyNotes, setOccupancyNotes] = useState([]);
   // Guards against a slow occupancy reply landing on a newer search's results.
   const searchToken = useRef(0);
   const [saved, setSaved] = useState([]);
@@ -95,15 +98,19 @@ export default function App() {
     }
 
     setOccupancyBusy(true);
+    setOccupancyNotes([]);
+    const notes = new Set();
     try {
       for (const day of [...byDate.keys()].sort()) {
         if (searchToken.current !== token) return;  // a newer search superseded us
-        let occupancy;
+        let occupancy, dayNotes;
         try {
-          ({ occupancy } = await api.availability(byDate.get(day)));
+          ({ occupancy, notes: dayNotes } = await api.availability(byDate.get(day)));
         } catch {
           continue;  // one bad date shouldn't stop the rest
         }
+        for (const n of dayNotes || []) notes.add(n);
+        if (searchToken.current === token) setOccupancyNotes([...notes]);
         if (!occupancy || !Object.keys(occupancy).length) continue;
         if (searchToken.current !== token) return;
         setResult((prev) =>
@@ -239,7 +246,14 @@ export default function App() {
               Checking how full each showing is, nearest dates first…
             </p>
           )}
-          <Results result={result} config={config} />
+          {!occupancyBusy && occupancyNotes.length > 0 && (
+            <div className="rounded-lg border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
+              {occupancyNotes.map((n, i) => (
+                <p key={i}>{n}</p>
+              ))}
+            </div>
+          )}
+          <Results result={result} config={config} form={form} />
         </div>
 
         <BrowserSeatCheck
