@@ -9,6 +9,7 @@ import {
   ScanSearch,
   Loader2,
   CalendarPlus,
+  Flame,
   Navigation,
 } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui/primitives";
@@ -66,6 +67,36 @@ function endSentence(text) {
   return /[.!?]$/.test(t) ? t : t + ".";
 }
 
+// How full a showing is, from the chain's own listing. Worded so it can never be
+// mistaken for the seat check: only a seat map knows whether N seats are
+// *together*, so these say how full the room is and nothing more. Sold out is
+// the exception -- no seats at all settles the question -- and it reads as a
+// definitive red rather than a hint.
+const OCCUPANCY = {
+  sold_out: {
+    tone: "red",
+    Icon: XCircle,
+    label: "Sold out",
+    title: "The chain's own showtimes page lists this showing as sold out.",
+  },
+  almost_full: {
+    tone: "yellow",
+    Icon: Flame,
+    label: "Almost full",
+    title:
+      "The chain lists this showing as almost full — seats remain, but whether "
+      + "any are together is not something the listing says. Check seats to find out.",
+  },
+  seats_available: {
+    tone: "blue",
+    Icon: ArmchairIcon,
+    label: "Seats available",
+    title:
+      "The chain's listing shows this showing still selling. It does not say "
+      + "whether seats are together — check seats for that.",
+  },
+};
+
 function SeatBadge({ seat }) {
   const s = seat.status;
   if (s === "match") {
@@ -75,16 +106,27 @@ function SeatBadge({ seat }) {
       </Badge>
     );
   }
-  if (s === "check_manually") {
+  if (s === "no_match") {
     return (
-      <Badge tone="yellow" title={seat.reason || undefined}>
-        <HelpCircle className="h-3.5 w-3.5" /> Seats unknown
+      <Badge tone="red">
+        <XCircle className="h-3.5 w-3.5" /> No {seat.seats_together_requested}-block
+      </Badge>
+    );
+  }
+  // Nothing verified yet — say how full it is if the listing told us, which is
+  // far more useful than "unknown" and costs no extra page load per showtime.
+  const occ = OCCUPANCY[seat.occupancy];
+  if (occ) {
+    const { Icon } = occ;
+    return (
+      <Badge tone={occ.tone} title={occ.title}>
+        <Icon className="h-3.5 w-3.5" /> {occ.label}
       </Badge>
     );
   }
   return (
-    <Badge tone="red">
-      <XCircle className="h-3.5 w-3.5" /> No {seat.seats_together_requested}-block
+    <Badge tone="yellow" title={seat.reason || undefined}>
+      <HelpCircle className="h-3.5 w-3.5" /> Seats unknown
     </Badge>
   );
 }
@@ -137,8 +179,14 @@ function ShowtimeCard({ st, canVerify, groupReason }) {
   // The seat page is resolved server-side from theater + start time, so a
   // booking_url is no longer required to offer verification (providers only give
   // google.com links anyway).
+  // Nothing to check on a showing the chain already lists as sold out: there are
+  // no seats, so there is no block of N, and a 40-second seat-map load would only
+  // confirm it.
   const showVerifyBtn =
-    canVerify && !verified && st.seat_check.status === "check_manually";
+    canVerify &&
+    !verified &&
+    st.seat_check.status === "check_manually" &&
+    st.seat_check.occupancy !== "sold_out";
 
   const runVerify = async () => {
     setBusy(true);
