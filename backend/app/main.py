@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,8 @@ from .config import get_settings
 from .database import get_db, init_db
 from .models import LOCAL_USER_ID, SavedSearch, User
 from .schemas import (
+    AvailabilityRequest,
+    AvailabilityResponse,
     GridSeatCheckRequest,
     SavedSearchCreate,
     SavedSearchOut,
@@ -44,6 +47,10 @@ async def lifespan(app: FastAPI):
             db.add(User(id=LOCAL_USER_ID, display_name="Local User"))
             db.commit()
     yield
+    # The occupancy verifier keeps a browser alive between requests; release it.
+    from .scrape.verifier import close_shared_verifier
+
+    await close_shared_verifier()
 
 
 app = FastAPI(title="showtime-finder", version="1.0.0", lifespan=lifespan)
@@ -152,6 +159,78 @@ async def verify_seats(req: VerifySeatsRequest) -> VerifySeatsResponse:
         available=True, seat_check=check, grid=grid, stats=result.stats,
         reason=result.reason, seat_url=result.seat_url,
     )
+
+
+@app.post("/api/availability", response_model=AvailabilityResponse)
+async def availability(req: AvailabilityRequest) -> AvailabilityResponse:
+    """How full each showing is, from the chains' own listing pages.
+
+    Separate from /api/search on purpose. Search must stay fast, and this costs a
+    real page load per theatre and date — but *only* per theatre and date, not per
+    showing, so a whole results page usually resolves in a handful of loads.
+    The UI calls this after results render and fills the badges in.
+
+    Answering nothing is a normal outcome (Cinemark is behind an interstitial, a
+    chain may be rate-limiting), so failures come back as notes and an empty map
+    rather than an error — the badge simply stays "unknown".
+    """
+    from .scrape import availability as availability_parser
+    from .scrape.verifier import shared_verifier
+
+    # Shared across requests so its TTL listing cache survives: the same theatre
+    # and date asked for twice should cost no network the second time.
+    verifier = shared_verifier()
+    if not verifier.available():
+        return AvailabilityResponse(
+            occupancy={},
+            notes=["Listing lookups need ENABLE_SEAT_VERIFICATION and Playwright."],
+        )
+
+    # One group per (chain, theatre, date) — the unit a single listing load answers
+    # for, so N showings at a theatre on a date cost one fetch.
+    #
+    # Deliberately NOT keyed by title. Providers decorate the title per format
+    # ("The Odyssey" and "The Odyssey - IMAX 70mm IMAX 70mm" for the same film),
+    # which would split one theatre-day into several identical loads, and the
+    # decorated variant fails to match the listing's own film slug. The shortest
+    # title in a group is the undecorated one, and matching is substring-based, so
+    # it identifies the film for every variant.
+    groups: dict[tuple[str, str, str], tuple[str, str, datetime, str]] = {}
+    unsupported: set[str] = set()
+    for item in req.showtimes:
+        if not availability_parser.supports(item.chain):
+            unsupported.add(item.chain)
+            continue
+        day = item.start_datetime
+        key = (item.chain, item.theater_id, day.strftime("%Y-%m-%d"))
+        prev = groups.get(key)
+        if prev is None or len(item.movie_title) < len(prev[3]):
+            groups[key] = (item.chain, item.theater_id, day, item.movie_title)
+
+    notes: list[str] = []
+    found: dict[tuple[str, str, str, str], str] = {}
+    if groups:
+        found, notes = await verifier.occupancy_for(
+            list(groups.values()), close_browser=False
+        )
+
+    for chain in sorted(c for c in unsupported if c):
+        notes.append(
+            f"{chain.title()}'s showtimes listing does not publish how full a "
+            "showing is, so those stay unknown until you check seats."
+        )
+
+    # Map back onto the caller's own keys, so the UI never has to re-derive them.
+    out: dict[str, str] = {}
+    for item in req.showtimes:
+        state = found.get((
+            item.chain, item.theater_id,
+            item.start_datetime.strftime("%Y-%m-%d"),
+            item.start_datetime.strftime("%H:%M"),
+        ))
+        if state:
+            out[item.key] = state
+    return AvailabilityResponse(occupancy=out, notes=notes)
 
 
 @app.get("/api/seat-bookmarklet")
