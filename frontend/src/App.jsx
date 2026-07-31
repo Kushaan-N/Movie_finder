@@ -15,7 +15,7 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [occupancyBusy, setOccupancyBusy] = useState(false);
   // Why occupancy came back empty, when it did. Surfaced rather than dropped:
-  // a page full of "Seats unknown" with no explanation reads as broken.
+  // a page of cards with no seat state and no explanation reads as broken.
   const [occupancyNotes, setOccupancyNotes] = useState([]);
   // Guards against a slow occupancy reply landing on a newer search's results.
   const searchToken = useRef(0);
