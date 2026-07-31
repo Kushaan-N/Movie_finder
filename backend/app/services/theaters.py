@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Optional
@@ -86,18 +87,64 @@ _FALLBACK_GEOCODE = {
 }
 
 
+_ZIP_RE = re.compile(r"\b\d{5}\b")
+
+
+def _normalize_location(text: str) -> str:
+    """Lowercase and reduce to space-separated words, so punctuation can't matter."""
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+@lru_cache
+def _geocode_table() -> dict[str, tuple[float, float]]:
+    """The hand-written table, widened with every city and ZIP in theaters.json.
+
+    Each theater already carries an address and coordinates, so the places we
+    actually serve can geocode themselves — one less list to keep in sync by hand.
+    Hand-written entries win, since they name the centre of a city rather than
+    wherever a cinema happens to sit in it.
+    """
+    table: dict[str, tuple[float, float]] = {}
+    for t in load_theaters():
+        if t.lat is None or t.lng is None or not t.address:
+            continue
+        coords = (t.lat, t.lng)
+        # "135 4th St #3000, San Francisco, CA 94103" -> city "san francisco", zip 94103
+        parts = [p.strip() for p in t.address.split(",") if p.strip()]
+        if len(parts) >= 2:
+            table.setdefault(_normalize_location(parts[-2]), coords)
+        for zipcode in _ZIP_RE.findall(t.address):
+            table.setdefault(zipcode, coords)
+    table.update(_FALLBACK_GEOCODE)
+    return table
+
+
 def geocode(location: str) -> Optional[tuple[float, float]]:
     """Best-effort geocode. Returns (lat, lng) or None.
 
-    v1 uses a small offline table; wire Google Places here for real coverage.
+    Offline, and deliberately forgiving about how the place is written: people
+    type "San Francisco, CA", not "san francisco". Matching used to be exact-key
+    plus single-token, which meant every multi-word city was unreachable the
+    moment a state was appended — and an unplaceable location silently disables
+    the radius, so the failure is worth some effort to avoid.
+
+    Wire Google Places in here for real coverage; the return shape is the contract.
     """
-    key = (location or "").strip().lower()
-    if key in _FALLBACK_GEOCODE:
-        return _FALLBACK_GEOCODE[key]
-    # Match a bare ZIP embedded in a longer string.
-    for token in key.replace(",", " ").split():
-        if token in _FALLBACK_GEOCODE:
-            return _FALLBACK_GEOCODE[token]
+    norm = _normalize_location(location)
+    if not norm:
+        return None
+    table = _geocode_table()
+    if norm in table:
+        return table[norm]
+    # A ZIP anywhere in the string is the most specific thing on offer.
+    for zipcode in _ZIP_RE.findall(norm):
+        if zipcode in table:
+            return table[zipcode]
+    # Otherwise the longest place name that appears as whole words, so
+    # "downtown san jose ca" resolves and "san" alone never does.
+    for key in sorted((k for k in table if not k.isdigit()), key=len, reverse=True):
+        if re.search(rf"\b{re.escape(key)}\b", norm):
+            return table[key]
     logger.info("No offline geocode for '%s'; distance filtering will be skipped.", location)
     return None
 
