@@ -61,6 +61,7 @@ from ..providers.scraper_provider import (
     _robots_cache,
     cache_robots,
     robots_root,
+    robots_unreadable,
 )
 from ..schemas import SeatCheck, Showtime
 from ..services.seatcheck import evaluate_rows
@@ -127,6 +128,29 @@ def verifiable_chains() -> set[str]:
         for name, cfg in (_load_selectors().get("chains") or {}).items()
         if _unavailable_reason(cfg) is None
     }
+
+
+# How completely a chain can answer "are there N seats together, far enough back".
+# Lower sorts first: this is the app's whole purpose, so a theatre that can answer
+# it is more useful to see than one that can't, whatever the distance.
+SEAT_DATA_FULL = 0     # a real seat map — AMC
+SEAT_DATA_PARTIAL = 1  # sold-out state only — Regal's CAPTCHA-gated seat page
+SEAT_DATA_NONE = 2     # nothing without the user's own browser — Cinemark
+
+
+def seat_data_rank(chain: str) -> int:
+    """Rank a chain by how much of the seat question it can actually answer.
+
+    Derived from the chain's own config rather than hardcoding names, so it stays
+    honest if a chain's strategy changes: enabling Cinemark's parser (were its
+    robots.txt to allow it) would promote Cinemark here with no edit.
+    """
+    cfg = _chain_cfg(chain) or {}
+    if _unavailable_reason(cfg):
+        return SEAT_DATA_NONE
+    if str(cfg.get("strategy") or "").lower() == "capacity":
+        return SEAT_DATA_PARTIAL
+    return SEAT_DATA_FULL
 
 
 class SeatVerifier:
@@ -280,10 +304,18 @@ class SeatVerifier:
             readable = bool(body) and cache_robots(root, body)
         if _robots_allows(url):
             return True, None
-        if not readable:
+        # A root already in the cache skipped the fetch above, so `readable` says
+        # nothing about it -- ask the registry instead. Without this, one poisoned
+        # fetch made every later message blame the site's policy for what was
+        # really our failure to read the file, and the shared verifier keeps that
+        # cache alive across requests.
+        if not readable or robots_unreadable(root):
+            host = root.split("//", 1)[-1].removeprefix("www.")
             return False, (
-                f"Could not read robots.txt for {root} (the host returned a bot "
-                "check instead), so scraping was declined rather than guessed at"
+                f"{host} is serving a waiting-room or bot-check page instead of its "
+                "robots.txt right now, so we can't confirm what it allows and didn't "
+                "fetch. Seat status there will fill in once that clears — usually a "
+                "few minutes."
             )
         return False, None
 
