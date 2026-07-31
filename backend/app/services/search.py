@@ -206,8 +206,11 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
         try:
             raw = await provider.fetch(query)
         except Exception as exc:  # pragma: no cover - provider/network errors
+            # Logged, not surfaced. Which data source we tried and that we moved on
+            # to the next is our plumbing; the user's question is "why no results",
+            # and the specific note below answers that. Saying "Provider serpapi
+            # errored; falling back" alongside it just adds noise they can't act on.
             logger.warning("Provider %s failed: %s", provider.name, exc)
-            notes.append(f"Provider {provider.name} errored; falling back.")
             continue
         provider_used = provider.name
         if raw:
@@ -215,7 +218,7 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
             if use_cache and ttl > 0:
                 _provider_cache[pkey] = (_time.time(), list(raw), provider_used)
             break
-        notes.append(f"Provider {provider.name} returned no rows; falling back.")
+        logger.info("Provider %s returned no rows; falling back.", provider.name)
 
     if provider_used == "serpapi" and not raw:
         if not candidates:
@@ -342,12 +345,23 @@ async def run_search(req: SearchRequest, use_cache: bool = True) -> SearchRespon
                 f"{req.radius_miles:g}-mile radius."
             )
 
-    # Nearest theater first, then chronologically within it. The UI groups by
-    # theater, so this ordering is what the user actually scans; alphabetical put a
-    # 22-mile theater above one 0.9 miles away. Theaters with no known distance sort
-    # last rather than first, so an unknown never outranks a measured one.
+    # Theatres we can actually answer the seat question for come first, then nearest
+    # within that, then chronologically.
+    #
+    # The seat requirement is the entire point of this app, and only some chains can
+    # answer it: AMC yields a real seat map, Regal only sold-out state, Cinemark
+    # nothing without the user's own browser. Sorting purely by distance therefore
+    # led with theatres where every card said "check manually" and buried the one
+    # place the question could be settled.
+    #
+    # Distance still decides the order within a tier, and it stays on screen, so the
+    # nearest theatre is never hidden -- it just doesn't outrank a theatre that can
+    # tell you whether your seats exist.
+    from ..scrape.verifier import seat_data_rank
+
     showtimes.sort(
         key=lambda s: (
+            seat_data_rank(s.chain),
             s.distance_miles if s.distance_miles is not None else float("inf"),
             s.theater_name.lower(),
             s.start_datetime,
