@@ -3,10 +3,21 @@
 const BASE = import.meta.env.VITE_API_BASE || "";
 
 async function req(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+  } catch {
+    // fetch rejects with a bare "Failed to fetch" for a dead server, DNS failure
+    // or a blocked request — accurate for a developer, meaningless to whoever is
+    // looking at the screen. Name the likely cause and the fix.
+    throw new Error(
+      "Couldn't reach the showtime-finder server. Check that the backend is "
+      + "running (uvicorn app.main:app --port 8000) and try again.",
+    );
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
